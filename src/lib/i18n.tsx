@@ -57,6 +57,7 @@ const PT: Record<string, string> = {
 	"Rain now": "Chuva agora",
 	dry: "sem chuva",
 	Refresh: "Atualizar",
+	Updating: "Atualizando",
 	"Click the map": "Clique no mapa",
 	Change: "Alterar",
 	"Downloading GOES-19 data from NOAA… the first load can take a minute.":

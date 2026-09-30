@@ -80,19 +80,34 @@ function StormTrackerPage() {
 	const query = useQuery({
 		queryKey: ["frames", target.lat, target.lon],
 		queryFn: () => fetchFrames(target),
-		refetchInterval: REFRESH_INTERVAL_MS,
 		staleTime: REFRESH_INTERVAL_MS - 30_000,
 		placeholderData: keepPreviousData,
 		retry: 1,
 	});
 	const data = query.data;
-	const forecast = useQuery({
+	const forecastQuery = useQuery({
 		queryKey: ["forecast", target.lat, target.lon],
 		queryFn: () => fetchForecast(target),
-		refetchInterval: 15 * 60 * 1000,
-		staleTime: 15 * 60 * 1000,
+		staleTime: REFRESH_INTERVAL_MS - 30_000,
 		retry: 1,
-	}).data;
+	});
+	const forecast = forecastQuery.data;
+	const [refreshKey, setRefreshKey] = useState(() => Date.now());
+	const refetchFrames = query.refetch;
+	const refetchForecast = forecastQuery.refetch;
+	const firstRefresh = useRef(true);
+	useEffect(() => {
+		if (firstRefresh.current) firstRefresh.current = false;
+		else {
+			refetchFrames();
+			refetchForecast();
+		}
+		const timer = window.setTimeout(
+			() => setRefreshKey(Date.now()),
+			refreshKey + REFRESH_INTERVAL_MS - Date.now(),
+		);
+		return () => window.clearTimeout(timer);
+	}, [refreshKey, refetchFrames, refetchForecast]);
 	const frameTotal = data?.frames.length ?? 0;
 
 	const [frameIndex, setFrameIndex] = useState(0);
@@ -177,6 +192,7 @@ function StormTrackerPage() {
 					flyTo={flyTo}
 					onPick={pickTarget}
 					onSelectTrack={setSelectedTrackId}
+					refreshKey={refreshKey}
 				/>
 				<div className="pointer-events-none absolute top-4 bottom-4 left-4 flex flex-col">
 					<StormPanel
@@ -188,7 +204,8 @@ function StormTrackerPage() {
 						picking={picking}
 						selectedTrackId={selectedTrackId}
 						onTogglePicking={() => setPicking((value) => !value)}
-						onRefresh={() => query.refetch()}
+						onRefresh={() => setRefreshKey(Date.now())}
+						nextRefreshAt={refreshKey + REFRESH_INTERVAL_MS}
 						onSelectTrack={(track) => focusTrack(track.trackId)}
 					/>
 				</div>

@@ -1,6 +1,6 @@
 import type { ForecastHour, PointForecast } from "#/lib/storm-types";
 
-const CACHE_TTL_MS = 15 * 60 * 1000;
+const CACHE_TTL_MS = 5 * 60 * 1000;
 const HOURS_AHEAD = 36;
 const USER_AGENT = "storm-tracker (personal weather dashboard)";
 const MONTHS = [

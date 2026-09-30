@@ -68,10 +68,10 @@ interface StormMapProps {
 	flyTo: FlyToRequest | null;
 	onPick: (position: LatLon) => void;
 	onSelectTrack: (trackId: number | null) => void;
+	refreshKey: number;
 }
 
 const LOW_CLOUD_LIMIT_K = 250;
-const RADAR_REFRESH_MS = 5 * 60 * 1000;
 const RADAR_MAX_GAP_MS = 8 * 60 * 1000;
 const CLOUD_BASE_M = 1500;
 const CLOUD_DEPTH_STOPS: [number, number][] = [
@@ -425,6 +425,7 @@ export function StormMap({
 	flyTo,
 	onPick,
 	onSelectTrack,
+	refreshKey,
 }: StormMapProps) {
 	const { t } = useTranslation();
 	const [drawing, setDrawing] = useState(false);
@@ -432,7 +433,6 @@ export function StormMap({
 	const [ruler, setRuler] = useState<[number, number][]>([]);
 	const [radarTimes, setRadarTimes] = useState<string[]>([]);
 	const simeparImages = useRef(new Map<string, Promise<FieldImage>>());
-	const [simeparEpoch, setSimeparEpoch] = useState(() => Date.now());
 	const rulerMarkersRef = useRef<Marker[]>([]);
 	drawingRef.current = drawing && !picking;
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -631,15 +631,6 @@ export function StormMap({
 		);
 	}, [loaded, data, settings.overlay]);
 
-	useEffect(() => {
-		if (!settings.simepar) return;
-		const timer = window.setInterval(() => {
-			simeparImages.current.clear();
-			setSimeparEpoch(Date.now());
-		}, RADAR_REFRESH_MS);
-		return () => window.clearInterval(timer);
-	}, [settings.simepar]);
-
 	const simeparFrame = useMemo(() => {
 		const index = frame && data ? data.frames.indexOf(frame) : -1;
 		const offset = index < 0 || !data ? 0 : data.frames.length - 1 - index;
@@ -657,14 +648,13 @@ export function StormMap({
 			});
 			return;
 		}
-		const key = `${simeparFrame}:${settings.simeparStyle}`;
+		const key = `${refreshKey}:${simeparFrame}:${settings.simeparStyle}`;
+		for (const cached of simeparImages.current.keys())
+			if (!cached.startsWith(`${refreshKey}:`))
+				simeparImages.current.delete(cached);
 		let image = simeparImages.current.get(key);
 		if (!image) {
-			image = loadSimeparImage(
-				simeparFrame,
-				settings.simeparStyle,
-				simeparEpoch,
-			);
+			image = loadSimeparImage(simeparFrame, settings.simeparStyle, refreshKey);
 			simeparImages.current.set(key, image);
 			image.catch(() => simeparImages.current.delete(key));
 		}
@@ -682,7 +672,7 @@ export function StormMap({
 		settings.simepar,
 		settings.simeparStyle,
 		simeparFrame,
-		simeparEpoch,
+		refreshKey,
 	]);
 
 	useEffect(() => {
@@ -691,20 +681,14 @@ export function StormMap({
 			return;
 		}
 		const controller = new AbortController();
-		const refresh = () =>
-			fetch("/api/radar", { signal: controller.signal })
-				.then((response) => (response.ok ? response.json() : []))
-				.then(setRadarTimes)
-				.catch((error) => {
-					if (!controller.signal.aborted) console.error(error);
-				});
-		refresh();
-		const timer = window.setInterval(refresh, RADAR_REFRESH_MS);
-		return () => {
-			controller.abort();
-			window.clearInterval(timer);
-		};
-	}, [settings.radar]);
+		fetch(`/api/radar?t=${refreshKey}`, { signal: controller.signal })
+			.then((response) => (response.ok ? response.json() : []))
+			.then(setRadarTimes)
+			.catch((error) => {
+				if (!controller.signal.aborted) console.error(error);
+			});
+		return () => controller.abort();
+	}, [settings.radar, refreshKey]);
 
 	const radarTime = useMemo(() => {
 		if (!frame || frame === data?.frames.at(-1)) return radarTimes[0] ?? null;

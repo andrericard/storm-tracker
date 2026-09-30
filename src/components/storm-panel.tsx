@@ -12,6 +12,7 @@ import {
 	TrendingUp,
 	Zap,
 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Help } from "#/components/help";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
@@ -44,6 +45,7 @@ interface StormPanelProps {
 	selectedTrackId: number | null;
 	onTogglePicking: () => void;
 	onRefresh: () => void;
+	nextRefreshAt: number;
 	onSelectTrack: (track: TrackSummary) => void;
 }
 
@@ -66,6 +68,20 @@ const RISK_LABELS: Record<TornadoRisk, string> = {
 	moderate: "Tornado: moderate",
 	high: "Tornado: high",
 };
+
+function Countdown({ to }: { to: number }) {
+	const [now, setNow] = useState(() => Date.now());
+	useEffect(() => {
+		const timer = window.setInterval(() => setNow(Date.now()), 1000);
+		return () => window.clearInterval(timer);
+	}, []);
+	const seconds = Math.max(0, Math.round((to - now) / 1000));
+	return (
+		<span className="tabular-nums">
+			{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
+		</span>
+	);
+}
 
 function Metric({
 	label,
@@ -169,6 +185,11 @@ function TrackCard({
 	onSelect: () => void;
 }) {
 	const { t, language } = useTranslation();
+	const cardRef = useRef<HTMLButtonElement>(null);
+	useEffect(() => {
+		if (selected)
+			cardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+	}, [selected]);
 	const color = SEVERITY_COLORS[track.severity];
 	const environment = track.environment;
 	const chips = [
@@ -215,6 +236,7 @@ function TrackCard({
 	].filter(Boolean);
 	return (
 		<button
+			ref={cardRef}
 			type="button"
 			onClick={onSelect}
 			className={cn(
@@ -360,6 +382,7 @@ export function StormPanel({
 	onTogglePicking,
 	onRefresh,
 	onSelectTrack,
+	nextRefreshAt,
 }: StormPanelProps) {
 	const { t, language } = useTranslation();
 	const status = data
@@ -443,6 +466,10 @@ export function StormPanel({
 						<span className="flex items-center gap-1">
 							<Zap className="size-3" />
 							{t("Latest scan")} {formatAge(latestFrame.time, language)}
+						</span>
+						<span className="flex items-center gap-1">
+							<RefreshCw className="size-3" />
+							{isFetching ? t("Updating") : <Countdown to={nextRefreshAt} />}
 						</span>
 					</div>
 				)}
