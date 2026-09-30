@@ -132,17 +132,53 @@ export function LayerControls({
 				))}
 			</div>
 			{TOGGLES.map(({ key, label }) => (
-				<div key={key} className="flex items-center justify-between gap-2">
-					<Label htmlFor={key} className="text-sm font-normal">
-						{t(label)}
-					</Label>
-					<Switch
-						id={key}
-						checked={settings[key]}
-						onCheckedChange={(checked) =>
-							onChange({ ...settings, [key]: checked })
-						}
-					/>
+				<div key={key} className="flex flex-col gap-2">
+					<div className="flex items-center justify-between gap-2">
+						<Label htmlFor={key} className="text-sm font-normal">
+							{t(label)}
+						</Label>
+						<Switch
+							id={key}
+							checked={settings[key]}
+							onCheckedChange={(checked) =>
+								onChange({ ...settings, [key]: checked })
+							}
+						/>
+					</div>
+					{key === "simepar" && settings.simepar && (
+						<div className="flex flex-col gap-2 border-l pl-3">
+							<div className="flex items-center justify-between gap-2">
+								<Label htmlFor="simeparKeyed" className="text-sm font-normal">
+									{t("Remove map background")}
+								</Label>
+								<Switch
+									id="simeparKeyed"
+									checked={settings.simeparKeyed}
+									onCheckedChange={(checked) =>
+										onChange({ ...settings, simeparKeyed: checked })
+									}
+								/>
+							</div>
+							<div>
+								<div className="mb-2 flex items-center justify-between text-sm">
+									<span>{t("Opacity")}</span>
+									<span className="text-muted-foreground tabular-nums">
+										{Math.round(settings.simeparOpacity * 100)}%
+									</span>
+								</div>
+								<Slider
+									aria-label={t("Opacity")}
+									min={0.1}
+									max={1}
+									step={0.05}
+									value={[settings.simeparOpacity]}
+									onValueChange={([value]) =>
+										onChange({ ...settings, simeparOpacity: value })
+									}
+								/>
+							</div>
+						</div>
+					)}
 				</div>
 			))}
 			<div>

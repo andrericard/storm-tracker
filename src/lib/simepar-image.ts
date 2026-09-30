@@ -5,6 +5,8 @@ import {
 	mercatorY,
 } from "#/lib/mercator-grid";
 
+export const SIMEPAR_FRAME_COUNT = 8;
+
 export const SIMEPAR_BOUNDS = {
 	west: -57.1419,
 	east: -45.8144,
@@ -121,9 +123,11 @@ export const SIMEPAR_CORNERS: MercatorCorners = [
 ];
 
 export async function loadSimeparImage(
-	signal?: AbortSignal,
+	frame: number,
+	keyed: boolean,
+	cacheKey: number,
 ): Promise<FieldImage> {
-	const response = await fetch(`/api/simepar?t=${Date.now()}`, { signal });
+	const response = await fetch(`/api/simepar?frame=${frame}&t=${cacheKey}`);
 	if (!response.ok) throw new Error("Simepar radar is not available");
 	const bitmap = await createImageBitmap(await response.blob());
 	const canvas = document.createElement("canvas");
@@ -134,6 +138,6 @@ export async function loadSimeparImage(
 	context.drawImage(bitmap, 0, 0);
 	bitmap.close();
 	const source = context.getImageData(0, 0, canvas.width, canvas.height);
-	context.putImageData(toMercatorRows(keyRadar(source)), 0, 0);
+	context.putImageData(toMercatorRows(keyed ? keyRadar(source) : source), 0, 0);
 	return { url: canvas.toDataURL(), corners: SIMEPAR_CORNERS };
 }

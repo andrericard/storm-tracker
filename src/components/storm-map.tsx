@@ -11,7 +11,7 @@ import { distanceKm } from "#/lib/geo";
 import { useTranslation } from "#/lib/i18n";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { contourLines, fieldImage } from "#/lib/field-image";
+import { contourLines, type FieldImage, fieldImage } from "#/lib/field-image";
 import { infraredImage, TRANSPARENT_PIXEL } from "#/lib/infrared-image";
 import {
 	BRIGHTNESS_TEMP_STOPS,
@@ -25,7 +25,7 @@ import {
 import { OVERLAYS, type OverlayChoice } from "#/lib/overlays";
 import { RADAR_CORNERS } from "#/lib/radar";
 import { rainImage } from "#/lib/rain-image";
-import { loadSimeparImage } from "#/lib/simepar-image";
+import { loadSimeparImage, SIMEPAR_FRAME_COUNT } from "#/lib/simepar-image";
 import type { Frame, FramesResponse, LatLon } from "#/lib/storm-types";
 
 const BASEMAP_STYLE =
@@ -44,6 +44,8 @@ export interface MapSettings {
 	rain: boolean;
 	radar: boolean;
 	simepar: boolean;
+	simeparKeyed: boolean;
+	simeparOpacity: number;
 	overlay: OverlayChoice;
 	exaggeration: number;
 }
@@ -425,6 +427,8 @@ export function StormMap({
 	const drawingRef = useRef(false);
 	const [ruler, setRuler] = useState<[number, number][]>([]);
 	const [radarTimes, setRadarTimes] = useState<string[]>([]);
+	const simeparImages = useRef(new Map<string, Promise<FieldImage>>());
+	const [simeparEpoch, setSimeparEpoch] = useState(() => Date.now());
 	const rulerMarkersRef = useRef<Marker[]>([]);
 	drawingRef.current = drawing && !picking;
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -452,7 +456,8 @@ export function StormMap({
 			maxPitch: 80,
 			canvasContextAttributes: { antialias: true },
 			attributionControl: {
-				customAttribution: "Satellite © NOAA · Radar © IPMet/Unesp, Simepar · Forecast © ECMWF via Open-Meteo",
+				customAttribution:
+					"Satellite © NOAA · Radar © IPMet/Unesp, Simepar · Forecast © ECMWF via Open-Meteo",
 			},
 		});
 		map.addControl(
@@ -623,34 +628,58 @@ export function StormMap({
 	}, [loaded, data, settings.overlay]);
 
 	useEffect(() => {
+		if (!settings.simepar) return;
+		const timer = window.setInterval(() => {
+			simeparImages.current.clear();
+			setSimeparEpoch(Date.now());
+		}, RADAR_REFRESH_MS);
+		return () => window.clearInterval(timer);
+	}, [settings.simepar]);
+
+	const simeparFrame = useMemo(() => {
+		const index = frame && data ? data.frames.indexOf(frame) : -1;
+		const offset = index < 0 || !data ? 0 : data.frames.length - 1 - index;
+		return offset < SIMEPAR_FRAME_COUNT ? offset + 1 : null;
+	}, [data, frame]);
+
+	useEffect(() => {
 		const map = mapRef.current;
 		if (!map || !loaded) return;
 		const source = map.getSource("simepar") as ImageSource | undefined;
-		if (!settings.simepar) {
+		if (!settings.simepar || !simeparFrame) {
 			source?.updateImage({
 				url: TRANSPARENT_PIXEL,
 				coordinates: PLACEHOLDER_CORNERS,
 			});
 			return;
 		}
-		const controller = new AbortController();
-		const refresh = () => {
-			loadSimeparImage(controller.signal)
-				.then((image) => {
-					if (controller.signal.aborted) return;
-					source?.updateImage({ url: image.url, coordinates: image.corners });
-				})
-				.catch((error) => {
-					if (!controller.signal.aborted) console.error(error);
-				});
-		};
-		refresh();
-		const timer = window.setInterval(refresh, RADAR_REFRESH_MS);
+		const key = `${simeparFrame}:${settings.simeparKeyed}`;
+		let image = simeparImages.current.get(key);
+		if (!image) {
+			image = loadSimeparImage(
+				simeparFrame,
+				settings.simeparKeyed,
+				simeparEpoch,
+			);
+			simeparImages.current.set(key, image);
+			image.catch(() => simeparImages.current.delete(key));
+		}
+		let cancelled = false;
+		image
+			.then(({ url, corners }) => {
+				if (!cancelled) source?.updateImage({ url, coordinates: corners });
+			})
+			.catch((error) => console.error(error));
 		return () => {
-			controller.abort();
-			window.clearInterval(timer);
+			cancelled = true;
 		};
-	}, [loaded, settings.simepar]);
+	}, [
+		loaded,
+		settings.simepar,
+		settings.simeparKeyed,
+		simeparFrame,
+		simeparEpoch,
+	]);
 
 	useEffect(() => {
 		if (!settings.radar) {
@@ -747,6 +776,11 @@ export function StormMap({
 			"simepar-2d",
 			"visibility",
 			visibility(settings.simepar),
+		);
+		map.setPaintProperty(
+			"simepar-2d",
+			"raster-opacity",
+			settings.simeparOpacity,
 		);
 		for (const id of ["isobar-lines", "isobar-labels"]) {
 			map.setLayoutProperty(

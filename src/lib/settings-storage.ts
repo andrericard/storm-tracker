@@ -12,6 +12,8 @@ export const DEFAULT_SETTINGS: MapSettings = {
 	rain: false,
 	radar: false,
 	simepar: false,
+	simeparKeyed: true,
+	simeparOpacity: 0.85,
 	overlay: "none",
 	exaggeration: 5,
 };
@@ -54,6 +56,13 @@ export function loadSettings(): MapSettings {
 			rain: bool(parsed.rain, DEFAULT_SETTINGS.rain),
 			radar: bool(parsed.radar, DEFAULT_SETTINGS.radar),
 			simepar: bool(parsed.simepar, DEFAULT_SETTINGS.simepar),
+			simeparKeyed: bool(parsed.simeparKeyed, DEFAULT_SETTINGS.simeparKeyed),
+			simeparOpacity: clampNumber(
+				parsed.simeparOpacity,
+				0.1,
+				1,
+				DEFAULT_SETTINGS.simeparOpacity,
+			),
 			overlay: OVERLAYS.has(parsed.overlay as string)
 				? (parsed.overlay as MapSettings["overlay"])
 				: DEFAULT_SETTINGS.overlay,
