@@ -8,6 +8,7 @@ try {
  const {GLOSSARY,OVERLAY_DESCRIPTIONS}=await server.ssrLoadModule('/src/lib/glossary.ts');
  const {fieldImage,contourLines}=await server.ssrLoadModule('/src/lib/field-image.ts');
  const {distanceKm}=await server.ssrLoadModule('/src/lib/geo.ts');
+ const {nextRefreshSlot}=await server.ssrLoadModule('/src/lib/refresh.ts');
  const {simeparField}=await server.ssrLoadModule('/src/lib/simepar-image.ts');
  const {parseSimepar,mergeForecasts}=await server.ssrLoadModule('/src/server/forecast.ts');
  const grid={west:-54,south:-25,step:0.05,cols:60,rows:60};
@@ -83,5 +84,10 @@ try {
  assert(Math.abs(at(field.valueSum,110,110)/at(field.valueCount,110,110)-0.26)<0.03,'yellow maps to its legend position');
  assert(at(field.presence,200,200)<0.4,'isolated pixel is dropped as speckle');
  assert.equal(at(field.presence,300,300),0,'grey basemap is not rain');
- console.log('Passed: Simepar HD field, Simepar parsing, forecast merge, matrix motion, cooling, outliers, missing scans, rolling IDs, translations and circular overlays.');
+ const utc=(h,m,sec=0)=>Date.UTC(2026,8,30,h,m,sec);
+ assert.equal(nextRefreshSlot(utc(15,0)),utc(15,2));
+ assert.equal(nextRefreshSlot(utc(15,2)),utc(15,12),'a refresh at the slot schedules the next one');
+ assert.equal(nextRefreshSlot(utc(15,5,30)),utc(15,12));
+ assert.equal(nextRefreshSlot(utc(15,58)),utc(16,2));
+ console.log('Passed: refresh slots, Simepar HD field, Simepar parsing, forecast merge, matrix motion, cooling, outliers, missing scans, rolling IDs, translations and circular overlays.');
 } finally {await server.close();}

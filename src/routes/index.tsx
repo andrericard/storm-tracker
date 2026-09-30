@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ForecastCard } from "#/components/forecast-card";
 import { LayerControls, MapLegends } from "#/components/layer-controls";
 import {
@@ -11,6 +11,7 @@ import {
 import { StormPanel } from "#/components/storm-panel";
 import { Timeline } from "#/components/timeline";
 import { TooltipProvider } from "#/components/ui/tooltip";
+import { nextRefreshSlot, REFRESH_INTERVAL_MS } from "#/lib/refresh";
 import {
 	DEFAULT_SETTINGS,
 	loadSettings,
@@ -20,7 +21,6 @@ import type { FramesResponse, LatLon, PointForecast } from "#/lib/storm-types";
 
 const DEFAULT_TARGET = { lat: -23.7661, lon: -53.3206, name: "Umuarama, PR" };
 const FRAME_COUNT = 12;
-const REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 const PLAYBACK_INTERVAL_MS = 700;
 
 interface SearchParams {
@@ -93,21 +93,18 @@ function StormTrackerPage() {
 	});
 	const forecast = forecastQuery.data;
 	const [refreshKey, setRefreshKey] = useState(() => Date.now());
+	const nextRefreshAt = nextRefreshSlot(refreshKey);
 	const refetchFrames = query.refetch;
 	const refetchForecast = forecastQuery.refetch;
-	const firstRefresh = useRef(true);
+	const refreshAll = useCallback(() => {
+		setRefreshKey(Date.now());
+		refetchFrames();
+		refetchForecast();
+	}, [refetchFrames, refetchForecast]);
 	useEffect(() => {
-		if (firstRefresh.current) firstRefresh.current = false;
-		else {
-			refetchFrames();
-			refetchForecast();
-		}
-		const timer = window.setTimeout(
-			() => setRefreshKey(Date.now()),
-			refreshKey + REFRESH_INTERVAL_MS - Date.now(),
-		);
+		const timer = window.setTimeout(refreshAll, nextRefreshAt - Date.now());
 		return () => window.clearTimeout(timer);
-	}, [refreshKey, refetchFrames, refetchForecast]);
+	}, [nextRefreshAt, refreshAll]);
 	const frameTotal = data?.frames.length ?? 0;
 
 	const [frameIndex, setFrameIndex] = useState(0);
@@ -204,8 +201,8 @@ function StormTrackerPage() {
 						picking={picking}
 						selectedTrackId={selectedTrackId}
 						onTogglePicking={() => setPicking((value) => !value)}
-						onRefresh={() => setRefreshKey(Date.now())}
-						nextRefreshAt={refreshKey + REFRESH_INTERVAL_MS}
+						onRefresh={refreshAll}
+						nextRefreshAt={nextRefreshAt}
 						onSelectTrack={(track) => focusTrack(track.trackId)}
 					/>
 				</div>
