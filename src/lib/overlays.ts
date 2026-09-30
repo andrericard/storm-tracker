@@ -41,7 +41,7 @@ export const OVERLAYS: Record<OverlayField, OverlaySpec> = {
 		ticks: [250, 1500, 2500, 4000],
 	},
 	shear6: {
-		label: "Shear 0–6 km",
+		label: "Shear 0-6 km",
 		unit: "m/s",
 		scale: colorScale([
 			[8, "#0ea5e9", 0],
@@ -54,7 +54,7 @@ export const OVERLAYS: Record<OverlayField, OverlaySpec> = {
 		ticks: [12, 18, 25, 40],
 	},
 	srh3: {
-		label: "|SRH| 0–3 km (GFS)",
+		label: "|SRH| 0-3 km (GFS)",
 		unit: "m²/s²",
 		scale: colorScale([
 			[50, "#0ea5e9", 0],

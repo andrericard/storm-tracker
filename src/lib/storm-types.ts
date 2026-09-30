@@ -5,7 +5,8 @@ export type ThreatStatus =
 	| "approaching"
 	| "passing"
 	| "stationary"
-	| "distant";
+	| "distant"
+	| "uncertain";
 
 export interface LatLon {
 	lat: number;
@@ -82,6 +83,7 @@ export interface TrackSummary {
 	closestApproachMinutes: number;
 	etaMinutes: number | null;
 	motionInferred: boolean;
+	motionSamples: number;
 	lightningJump: boolean;
 	overshootingTop: boolean;
 	overshootDepthK: number;
@@ -131,4 +133,18 @@ export interface FramesResponse {
 	tracks: TrackSummary[];
 	environment: EnvironmentResponse | null;
 	generatedAt: string;
+}
+
+export interface SimeparForecast {
+	city: string;
+	url: string;
+	hours: {
+		day: string;
+		time: string;
+		condition: string;
+		tempC: number;
+		rainMm: number;
+		rainChance: number;
+		wind: string;
+	}[];
 }

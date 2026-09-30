@@ -24,6 +24,7 @@ import {
 } from "#/lib/format";
 import { compass } from "#/lib/geo";
 import { GLOSSARY, type GlossaryKey } from "#/lib/glossary";
+import { useTranslation } from "#/lib/i18n";
 import { kelvinToCelsius, SEVERITY_COLORS } from "#/lib/map-data";
 import type {
 	FramesResponse,
@@ -75,10 +76,11 @@ function Metric({
 	help: GlossaryKey;
 	value: React.ReactNode;
 }) {
+	const { t } = useTranslation();
 	return (
 		<div className="flex min-w-0 flex-col whitespace-nowrap">
 			<span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-				<Help text={GLOSSARY[help]}>{label}</Help>
+				<Help text={GLOSSARY[help]}>{t(label)}</Help>
 			</span>
 			<span className="flex items-center text-sm font-medium tabular-nums">
 				{value}
@@ -140,15 +142,15 @@ function Chip({
 
 function EnvironmentRow({ environment }: { environment: StormEnvironment }) {
 	return (
-		<div className="mt-3 flex justify-between gap-3">
+		<div className="mt-3 grid grid-cols-[5.5rem_1fr_1fr_1fr] gap-2">
 			<Metric label="CAPE" help="cape" value={`${environment.capeJkg} J/kg`} />
 			<Metric
-				label="Shear 0–6"
+				label="Shear 0-6"
 				help="shear6"
 				value={`${environment.shear6Ms} m/s`}
 			/>
 			<Metric
-				label="SRH 0–1"
+				label="SRH 0-1"
 				help="srh1"
 				value={`${environment.srh1M2s2} m²/s²`}
 			/>
@@ -166,6 +168,7 @@ function TrackCard({
 	selected: boolean;
 	onSelect: () => void;
 }) {
+	const { t, language } = useTranslation();
 	const color = SEVERITY_COLORS[track.severity];
 	const environment = track.environment;
 	const chips = [
@@ -176,7 +179,7 @@ function TrackCard({
 				help="lightningJump"
 				className="border-yellow-400/60 bg-yellow-400/10 text-yellow-200"
 			>
-				Lightning jump
+				{t("Lightning jump")}
 			</Chip>
 		),
 		track.overshootingTop && (
@@ -186,7 +189,7 @@ function TrackCard({
 				help="overshootingTop"
 				className="border-fuchsia-400/60 bg-fuchsia-400/10 text-fuchsia-200"
 			>
-				Overshooting top {track.overshootDepthK}K
+				{t("Overshooting top")} {track.overshootDepthK}K
 			</Chip>
 		),
 		track.maxRainRateMmh >= 1 && (
@@ -206,7 +209,7 @@ function TrackCard({
 				help="tornadoRisk"
 				className={RISK_STYLES[environment.risk]}
 			>
-				{RISK_LABELS[environment.risk]} · STP {environment.stp}
+				{t(RISK_LABELS[environment.risk])} · STP {environment.stp}
 			</Chip>
 		),
 	].filter(Boolean);
@@ -225,31 +228,37 @@ function TrackCard({
 						className="size-2.5 rounded-full"
 						style={{ background: color }}
 					/>
-					<span className="font-semibold">Storm #{track.trackId}</span>
+					<span className="font-semibold">
+						{t("Storm")} #{track.trackId}
+					</span>
 					<Badge
 						variant="outline"
 						className="capitalize"
 						style={{ borderColor: color, color }}
 					>
-						{track.severity}
+						{t(track.severity)}
 					</Badge>
 				</div>
-				<span className="truncate text-xs text-muted-foreground">
-					{STATUS_LABELS[track.status]}
-				</span>
 			</div>
 			<div className="mt-1 truncate text-xs text-muted-foreground">
-				{track.distanceKm} km {compass(track.bearingFromTargetDeg)} of target
-				{track.speedKmh >= 5 &&
-					` · moving ${compass(track.headingDeg)} ${track.speedKmh} km/h${track.motionInferred ? " (est.)" : ""}`}
+				{track.distanceKm} km {compass(track.bearingFromTargetDeg, language)}{" "}
+				{t("of target")}
+				{!track.motionInferred &&
+					track.speedKmh >= 5 &&
+					` · ${t("moving")} ${compass(track.headingDeg, language)} ${track.speedKmh} km/h${track.motionInferred ? " (est.)" : ""}`}
 				{track.etaMinutes !== null &&
 					track.etaMinutes > 0 &&
 					` · ETA ${formatMinutes(track.etaMinutes)}`}
 			</div>
+			<p className="mt-1 text-xs text-muted-foreground">
+				{t(STATUS_LABELS[track.status])}
+				{!track.motionInferred &&
+					` · ${t("{count} motion estimates", { count: track.motionSamples })}`}
+			</p>
 			{chips.length > 0 && (
 				<div className="mt-2 flex flex-wrap gap-1">{chips}</div>
 			)}
-			<div className="mt-3 flex justify-between gap-3">
+			<div className="mt-3 grid grid-cols-[5.5rem_1fr_1fr_1fr] gap-2">
 				<Metric
 					label="Top temp"
 					help="topTemp"
@@ -293,19 +302,22 @@ function TargetEnvironment({
 	environment: StormEnvironment;
 	rainMmh: number;
 }) {
+	const { t } = useTranslation();
 	return (
 		<div className="mt-3 rounded-lg border bg-card/40 p-3">
 			<div className="flex items-center justify-between whitespace-nowrap">
-				<span className="text-xs font-medium">Environment at target</span>
+				<span className="text-xs font-medium">
+					{t("Environment at target")}
+				</span>
 				<Chip
 					icon={Tornado}
 					help="tornadoRisk"
 					className={RISK_STYLES[environment.risk]}
 				>
-					{RISK_LABELS[environment.risk]}
+					{t(RISK_LABELS[environment.risk])}
 				</Chip>
 			</div>
-			<div className="mt-2 flex justify-between gap-3">
+			<div className="mt-2 grid grid-cols-[5.5rem_1fr_1fr_1fr] gap-2">
 				<Metric
 					label="Pressure"
 					help="pressure"
@@ -320,17 +332,17 @@ function TargetEnvironment({
 				<Metric
 					label="Rain now"
 					help="rainNow"
-					value={rainMmh > 0 ? `${rainMmh} mm/h` : "dry"}
+					value={rainMmh > 0 ? `${rainMmh} mm/h` : t("dry")}
 				/>
 			</div>
-			<div className="mt-2 flex justify-between gap-3">
+			<div className="mt-2 grid grid-cols-[5.5rem_1fr_1fr_1fr] gap-2">
 				<Metric
-					label="Shear 0–6"
+					label="Shear 0-6"
 					help="shear6"
 					value={`${environment.shear6Ms} m/s`}
 				/>
-				<Metric label="SRH 0–1" help="srh1" value={`${environment.srh1M2s2}`} />
-				<Metric label="SRH 0–3" help="srh3" value={`${environment.srh3M2s2}`} />
+				<Metric label="SRH 0-1" help="srh1" value={`${environment.srh1M2s2}`} />
+				<Metric label="SRH 0-3" help="srh3" value={`${environment.srh3M2s2}`} />
 				<Metric label="LCL" help="lcl" value={`${environment.lclM} m`} />
 			</div>
 		</div>
@@ -349,7 +361,10 @@ export function StormPanel({
 	onRefresh,
 	onSelectTrack,
 }: StormPanelProps) {
-	const status = data ? headline(data.tracks[0], data.radiusKm) : null;
+	const { t, language } = useTranslation();
+	const status = data
+		? headline(data.tracks[0], data.radiusKm, language)
+		: null;
 	const latestFrame = data?.frames.at(-1);
 	return (
 		<div className="pointer-events-auto flex max-h-[calc(100vh-2rem)] w-[400px] flex-col rounded-xl border bg-background/85 shadow-2xl backdrop-blur-md">
@@ -370,7 +385,7 @@ export function StormPanel({
 					size="icon"
 					onClick={onRefresh}
 					disabled={isFetching}
-					aria-label="Refresh"
+					aria-label={t("Refresh")}
 				>
 					{isFetching ? (
 						<Loader2 className="size-4 animate-spin" />
@@ -391,7 +406,7 @@ export function StormPanel({
 					onClick={onTogglePicking}
 				>
 					<Crosshair className="size-3.5" />
-					{picking ? "Click the map" : "Change"}
+					{t(picking ? "Click the map" : "Change")}
 				</Button>
 			</div>
 
@@ -401,13 +416,14 @@ export function StormPanel({
 				{isLoading && (
 					<div className="flex items-center gap-2 text-sm text-muted-foreground">
 						<Loader2 className="size-4 animate-spin" />
-						Downloading GOES-19 data from NOAA… the first load can take a
-						minute.
+						{t(
+							"Downloading GOES-19 data from NOAA… the first load can take a minute.",
+						)}
 					</div>
 				)}
 				{error && !data && (
 					<div className="rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200">
-						{error.message}
+						{t("Unable to load weather data. Try again.")}
 					</div>
 				)}
 				{status && (
@@ -422,11 +438,11 @@ export function StormPanel({
 					<div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
 						<span className="flex items-center gap-1">
 							<Navigation className="size-3" />
-							{data?.tracks.length ?? 0} active cells
+							{data?.tracks.length ?? 0} {t("active cells")}
 						</span>
 						<span className="flex items-center gap-1">
 							<Zap className="size-3" />
-							Latest scan {formatAge(latestFrame.time)}
+							{t("Latest scan")} {formatAge(latestFrame.time, language)}
 						</span>
 					</div>
 				)}

@@ -6,6 +6,9 @@ import maplibregl, {
 	type MapMouseEvent,
 	type Marker,
 } from "maplibre-gl";
+import { Button } from "#/components/ui/button";
+import { distanceKm } from "#/lib/geo";
+import { useTranslation } from "#/lib/i18n";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { contourLines, fieldImage } from "#/lib/field-image";
@@ -104,6 +107,7 @@ function addLayers(map: MapLibreMap) {
 		"tracks",
 		"flashes",
 		"isobars",
+		"ruler",
 	]) {
 		map.addSource(id, { type: "geojson", data: EMPTY_COLLECTION });
 	}
@@ -348,6 +352,30 @@ function addLayers(map: MapLibreMap) {
 			"text-halo-width": 1.2,
 		},
 	});
+	map.addLayer({
+		id: "ruler-line",
+		type: "line",
+		source: "ruler",
+		filter: ["==", ["geometry-type"], "LineString"],
+		paint: { "line-color": "#ffffff", "line-width": 2.5 },
+	});
+	map.addLayer({
+		id: "ruler-label",
+		type: "symbol",
+		source: "ruler",
+		filter: ["==", ["geometry-type"], "Point"],
+		layout: {
+			"text-field": ["get", "label"],
+			"text-font": LABEL_FONT,
+			"text-size": 12,
+			"text-offset": [0, -1],
+		},
+		paint: {
+			"text-color": "#fff",
+			"text-halo-color": "#111827",
+			"text-halo-width": 2,
+		},
+	});
 }
 
 function createTargetElement() {
@@ -355,6 +383,13 @@ function createTargetElement() {
 	element.className = "relative size-4";
 	element.innerHTML =
 		'<span class="absolute inset-0 animate-ping rounded-full bg-sky-400/60"></span><span class="absolute inset-0.5 rounded-full border-2 border-white bg-sky-500"></span>';
+	return element;
+}
+
+function createRulerHandle() {
+	const element = document.createElement("div");
+	element.className =
+		"size-3.5 cursor-move rounded-full border-2 border-gray-900 bg-white";
 	return element;
 }
 
@@ -369,6 +404,12 @@ export function StormMap({
 	onPick,
 	onSelectTrack,
 }: StormMapProps) {
+	const { t } = useTranslation();
+	const [drawing, setDrawing] = useState(false);
+	const drawingRef = useRef(false);
+	const [ruler, setRuler] = useState<[number, number][]>([]);
+	const rulerMarkersRef = useRef<Marker[]>([]);
+	drawingRef.current = drawing && !picking;
 	const containerRef = useRef<HTMLDivElement>(null);
 	const mapRef = useRef<MapLibreMap | null>(null);
 	const markerRef = useRef<Marker | null>(null);
@@ -410,6 +451,13 @@ export function StormMap({
 			setLoaded(true);
 		});
 		map.on("click", (event: MapMouseEvent) => {
+			if (drawingRef.current) {
+				const point: [number, number] = [event.lngLat.lng, event.lngLat.lat];
+				setRuler((points) =>
+					points.length === 1 ? [points[0], point] : [point],
+				);
+				return;
+			}
 			if (pickingRef.current) {
 				handlersRef.current.onPick({
 					lat: event.lngLat.lat,
@@ -417,6 +465,7 @@ export function StormMap({
 				});
 				return;
 			}
+			if (!map.getLayer("storm-fill")) return;
 			const [feature] = map.queryRenderedFeatures(event.point, {
 				layers: ["storm-fill"],
 			});
@@ -425,10 +474,12 @@ export function StormMap({
 			);
 		});
 		map.on("mouseenter", "storm-fill", () => {
-			if (!pickingRef.current) map.getCanvas().style.cursor = "pointer";
+			if (!pickingRef.current && !drawingRef.current)
+				map.getCanvas().style.cursor = "pointer";
 		});
 		map.on("mouseleave", "storm-fill", () => {
-			if (!pickingRef.current) map.getCanvas().style.cursor = "";
+			if (!pickingRef.current && !drawingRef.current)
+				map.getCanvas().style.cursor = "";
 		});
 		mapRef.current = map;
 		return () => {
@@ -531,13 +582,25 @@ export function StormMap({
 		}
 		const spec = OVERLAYS[settings.overlay];
 		const values = environment.fields[settings.overlay];
-		const image = fieldImage(environment.grid, values, spec.scale);
+		const image = fieldImage(
+			environment.grid,
+			values,
+			spec.scale,
+			data.target,
+			data.radiusKm,
+		);
 		source?.updateImage({ url: image.url, coordinates: image.corners });
 		setData(
 			map,
 			"isobars",
 			spec.contourInterval
-				? contourLines(environment.grid, values, spec.contourInterval)
+				? contourLines(
+						environment.grid,
+						values,
+						spec.contourInterval,
+						data.target,
+						data.radiusKm,
+					)
 				: EMPTY_COLLECTION,
 		);
 	}, [loaded, data, settings.overlay]);
@@ -679,8 +742,8 @@ export function StormMap({
 	useEffect(() => {
 		const map = mapRef.current;
 		if (!map) return;
-		map.getCanvas().style.cursor = picking ? "crosshair" : "";
-	}, [picking]);
+		map.getCanvas().style.cursor = picking || drawing ? "crosshair" : "";
+	}, [picking, drawing]);
 
 	useEffect(() => {
 		const map = mapRef.current;
@@ -692,9 +755,85 @@ export function StormMap({
 		});
 	}, [flyTo]);
 
+	useEffect(() => {
+		const map = mapRef.current;
+		if (!map || !loaded) return;
+		const markers = rulerMarkersRef.current;
+		ruler.forEach((point, i) => {
+			if (markers[i]) {
+				markers[i].setLngLat(point);
+				return;
+			}
+			const marker = new maplibregl.Marker({
+				element: createRulerHandle(),
+				draggable: true,
+			})
+				.setLngLat(point)
+				.addTo(map);
+			marker.on("drag", () => {
+				const { lng, lat } = marker.getLngLat();
+				setRuler((points) => points.map((p, j) => (j === i ? [lng, lat] : p)));
+			});
+			markers[i] = marker;
+		});
+		for (const marker of markers.splice(ruler.length)) marker.remove();
+		if (ruler.length === 2) setDrawing(false);
+		const [a, b] = ruler;
+		setData(map, "ruler", {
+			type: "FeatureCollection",
+			features: b
+				? [
+						{
+							type: "Feature",
+							properties: {},
+							geometry: { type: "LineString", coordinates: ruler },
+						},
+						{
+							type: "Feature",
+							properties: {
+								label: `${distanceKm({ lon: a[0], lat: a[1] }, { lon: b[0], lat: b[1] }).toFixed(1)} km`,
+							},
+							geometry: {
+								type: "Point",
+								coordinates: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2],
+							},
+						},
+					]
+				: [],
+		});
+	}, [ruler, loaded]);
+	useEffect(() => {
+		if (picking) setDrawing(false);
+	}, [picking]);
+
 	return (
 		<div className="absolute inset-0">
 			<div ref={containerRef} className="h-full w-full" />
+			<div className="absolute bottom-32 left-1/2 flex -translate-x-1/2 gap-2 rounded-lg border bg-background/90 p-2 shadow-lg">
+				<Button
+					size="sm"
+					variant={drawing ? "default" : "outline"}
+					disabled={picking}
+					aria-pressed={drawing}
+					onClick={() => {
+						if (!drawing) setRuler([]);
+						setDrawing(!drawing);
+					}}
+				>
+					{t("Ruler")}
+				</Button>
+				<Button
+					size="sm"
+					variant="outline"
+					disabled={!ruler.length}
+					onClick={() => {
+						setRuler([]);
+						setDrawing(false);
+					}}
+				>
+					{t("Clear")}
+				</Button>
+			</div>
 		</div>
 	);
 }

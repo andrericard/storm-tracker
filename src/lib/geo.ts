@@ -84,6 +84,7 @@ const COMPASS = [
 	"NNW",
 ];
 
-export function compass(deg: number) {
-	return COMPASS[Math.round(deg / 22.5) % 16];
+export function compass(deg: number, language: "pt" | "en" = "en") {
+	const label = COMPASS[Math.round(deg / 22.5) % 16];
+	return language === "pt" ? label.replaceAll("W", "O") : label;
 }

@@ -3,6 +3,7 @@ import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Slider } from "#/components/ui/slider";
 import { formatClock } from "#/lib/format";
+import { useTranslation } from "#/lib/i18n";
 import type { Frame } from "#/lib/storm-types";
 
 interface TimelineProps {
@@ -20,6 +21,7 @@ export function Timeline({
 	onIndexChange,
 	onTogglePlay,
 }: TimelineProps) {
+	const { t } = useTranslation();
 	const frame = frames[index];
 	if (!frame) return null;
 	const isLatest = index === frames.length - 1;
@@ -29,7 +31,7 @@ export function Timeline({
 				size="icon"
 				variant="secondary"
 				onClick={onTogglePlay}
-				aria-label={playing ? "Pause" : "Play"}
+				aria-label={t(playing ? "Pause" : "Play")}
 			>
 				{playing ? <Pause className="size-4" /> : <Play className="size-4" />}
 			</Button>
@@ -40,19 +42,26 @@ export function Timeline({
 					</span>
 					<div className="flex items-center gap-2 text-muted-foreground">
 						{frame.heightSource === "estimated" && (
-							<span title="Cloud Top Height product not yet available for this scan">
-								height estimated
+							<span
+								title={t(
+									"Cloud Top Height product not yet available for this scan",
+								)}
+							>
+								{t("height estimated")}
 							</span>
 						)}
-						<span>{frame.flashes.length / 2} flashes</span>
+						<span>
+							{frame.flashes.length / 2} {t("flashes")}
+						</span>
 						{isLatest && (
 							<Badge className="bg-red-500/90 text-white hover:bg-red-500/90">
-								LIVE
+								{t("LIVE")}
 							</Badge>
 						)}
 					</div>
 				</div>
 				<Slider
+					aria-label={t("Timeline")}
 					min={0}
 					max={frames.length - 1}
 					step={1}

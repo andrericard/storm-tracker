@@ -1,4 +1,5 @@
 import { compass } from "#/lib/geo";
+import { type Language, translate } from "#/lib/i18n";
 import type { ThreatStatus, TrackSummary } from "#/lib/storm-types";
 
 export function formatMinutes(minutes: number) {
@@ -15,12 +16,19 @@ export function formatClock(iso: string) {
 	});
 }
 
-export function formatAge(iso: string, now = Date.now()) {
+export function formatAge(
+	iso: string,
+	language: Language = "pt",
+	now = Date.now(),
+) {
 	const minutes = Math.round((now - new Date(iso).getTime()) / 60_000);
-	return minutes <= 0 ? "just now" : `${formatMinutes(minutes)} ago`;
+	return minutes <= 0
+		? translate(language, "just now")
+		: translate(language, "{time} ago", { time: formatMinutes(minutes) });
 }
 
 export const STATUS_LABELS: Record<ThreatStatus, string> = {
+	uncertain: "Uncertain motion",
 	overhead: "Over target",
 	approaching: "Approaching",
 	passing: "Passing nearby",
@@ -28,39 +36,66 @@ export const STATUS_LABELS: Record<ThreatStatus, string> = {
 	distant: "Not heading here",
 };
 
-export function headline(track: TrackSummary | undefined, radiusKm: number) {
+export function headline(
+	track: TrackSummary | undefined,
+	radiusKm: number,
+	language: Language = "pt",
+) {
+	const t = (text: string, values?: Record<string, string | number>) =>
+		translate(language, text, values);
 	if (!track) {
 		return {
 			tone: "calm" as const,
-			title: "No convective storms",
-			detail: `Nothing with cloud tops below -38°C within ${radiusKm} km.`,
+			title: t("No convective storms"),
+			detail: t("Nothing with cloud tops below -38°C within {radius} km.", {
+				radius: radiusKm,
+			}),
 		};
 	}
-	const where = `${track.distanceKm} km ${compass(track.bearingFromTargetDeg)}`;
+	const where = `${track.distanceKm} km ${compass(track.bearingFromTargetDeg, language)}`;
 	switch (track.status) {
+		case "uncertain":
+			return {
+				tone: "watch" as const,
+				title: t("Uncertain motion"),
+				detail: t("Not enough consistent cloud motion to estimate arrival."),
+			};
 		case "overhead":
 			return {
 				tone: "alert" as const,
-				title: `Storm #${track.trackId} is over you`,
-				detail: `Tops at ${Math.round(track.minBrightnessTempK - 273.15)}°C, ${track.flashCount} flashes in the last 10 min.`,
+				title: t("Storm #{id} is over you", { id: track.trackId }),
+				detail: t("Tops at {temp}°C, {flashes} flashes in the last 10 min.", {
+					temp: Math.round(track.minBrightnessTempK - 273.15),
+					flashes: track.flashCount,
+				}),
 			};
 		case "approaching":
 			return {
 				tone: "alert" as const,
-				title: `Storm #${track.trackId} arriving in ~${formatMinutes(track.etaMinutes ?? 0)}`,
-				detail: `Currently ${where}, moving ${compass(track.headingDeg)} at ${track.speedKmh} km/h.`,
+				title: t("Storm #{id} arriving in ~{time}", {
+					id: track.trackId,
+					time: formatMinutes(track.etaMinutes ?? 0),
+				}),
+				detail: t("Currently {where}, moving {direction} at {speed} km/h.", {
+					where,
+					direction: compass(track.headingDeg, language),
+					speed: track.speedKmh,
+				}),
 			};
 		case "passing":
 			return {
 				tone: "watch" as const,
-				title: `Storm #${track.trackId} may pass nearby`,
-				detail: `Closest approach ~${track.closestApproachKm} km in ${formatMinutes(track.closestApproachMinutes)}.`,
+				title: t("Storm #{id} may pass nearby", { id: track.trackId }),
+				detail: t("Closest approach ~{distance} km in {time}.", {
+					distance: track.closestApproachKm,
+					time: formatMinutes(track.closestApproachMinutes),
+				}),
 			};
 		default:
 			return {
 				tone: "calm" as const,
-				title: "No storms heading your way",
-				detail: `Nearest active cell is ${where}.`,
+				title: t("No storms heading your way"),
+				detail: t("Nearest active cell is {where}.", { where }),
 			};
 	}
 }

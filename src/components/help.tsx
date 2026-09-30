@@ -3,6 +3,7 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "#/components/ui/tooltip";
+import { useTranslation } from "#/lib/i18n";
 import { cn } from "#/lib/utils";
 
 interface HelpProps {
@@ -12,6 +13,7 @@ interface HelpProps {
 }
 
 export function Help({ text, className, children }: HelpProps) {
+	const { t } = useTranslation();
 	return (
 		<Tooltip>
 			<TooltipTrigger asChild>
@@ -25,7 +27,7 @@ export function Help({ text, className, children }: HelpProps) {
 				</span>
 			</TooltipTrigger>
 			<TooltipContent side="right" className="max-w-64 text-xs leading-snug">
-				{text}
+				{t(text)}
 			</TooltipContent>
 		</Tooltip>
 	);

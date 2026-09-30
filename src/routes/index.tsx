@@ -2,6 +2,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { LayerControls } from "#/components/layer-controls";
+import { SimeparForecastCard } from "#/components/simepar-forecast";
 import {
 	type FlyToRequest,
 	type MapSettings,
@@ -10,11 +11,19 @@ import {
 import { StormPanel } from "#/components/storm-panel";
 import { Timeline } from "#/components/timeline";
 import { TooltipProvider } from "#/components/ui/tooltip";
-import { loadSettings, saveSettings } from "#/lib/settings-storage";
-import type { FramesResponse, LatLon } from "#/lib/storm-types";
+import {
+	DEFAULT_SETTINGS,
+	loadSettings,
+	saveSettings,
+} from "#/lib/settings-storage";
+import type {
+	FramesResponse,
+	LatLon,
+	SimeparForecast,
+} from "#/lib/storm-types";
 
 const DEFAULT_TARGET = { lat: -23.7661, lon: -53.3206, name: "Umuarama, PR" };
-const FRAME_COUNT = 6;
+const FRAME_COUNT = 12;
 const REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 const PLAYBACK_INTERVAL_MS = 700;
 
@@ -49,6 +58,17 @@ async function fetchFrames(target: LatLon): Promise<FramesResponse> {
 	return body;
 }
 
+async function fetchForecast(target: LatLon): Promise<SimeparForecast | null> {
+	const params = new URLSearchParams({
+		lat: target.lat.toFixed(4),
+		lon: target.lon.toFixed(4),
+	});
+	const response = await fetch(`/api/forecast?${params}`);
+	const body = await response.json();
+	if (!response.ok) throw new Error(body.error ?? "Failed to load forecast");
+	return body;
+}
+
 function StormTrackerPage() {
 	const search = Route.useSearch();
 	const navigate = Route.useNavigate();
@@ -70,6 +90,13 @@ function StormTrackerPage() {
 		retry: 1,
 	});
 	const data = query.data;
+	const forecast = useQuery({
+		queryKey: ["forecast", target.lat, target.lon],
+		queryFn: () => fetchForecast(target),
+		refetchInterval: 15 * 60 * 1000,
+		staleTime: 15 * 60 * 1000,
+		retry: 1,
+	}).data;
 	const frameTotal = data?.frames.length ?? 0;
 
 	const [frameIndex, setFrameIndex] = useState(0);
@@ -78,12 +105,17 @@ function StormTrackerPage() {
 	const [picking, setPicking] = useState(false);
 	const [selectedTrackId, setSelectedTrackId] = useState<number | null>(null);
 	const [flyTo, setFlyTo] = useState<FlyToRequest | null>(null);
-	const [settings, setSettings] = useState<MapSettings>(loadSettings);
+	const [settings, setSettings] = useState<MapSettings>(DEFAULT_SETTINGS);
 	const flyKey = useRef(0);
+	const [settingsLoaded, setSettingsLoaded] = useState(false);
+	useEffect(() => {
+		setSettings(loadSettings());
+		setSettingsLoaded(true);
+	}, []);
 
 	useEffect(() => {
-		saveSettings(settings);
-	}, [settings]);
+		if (settingsLoaded) saveSettings(settings);
+	}, [settings, settingsLoaded]);
 
 	useEffect(() => {
 		if (frameTotal && followLive) setFrameIndex(frameTotal - 1);
@@ -164,12 +196,13 @@ function StormTrackerPage() {
 						onSelectTrack={(track) => focusTrack(track.trackId)}
 					/>
 				</div>
-				<div className="pointer-events-none absolute top-4 right-4">
+				<div className="pointer-events-none absolute top-4 right-4 bottom-4 flex flex-col gap-2">
 					<LayerControls
 						settings={settings}
 						model={data?.environment?.model ?? null}
 						onChange={setSettings}
 					/>
+					{forecast && <SimeparForecastCard forecast={forecast} />}
 				</div>
 				{data && (
 					<div className="pointer-events-none absolute bottom-6 left-1/2 -translate-x-1/2">

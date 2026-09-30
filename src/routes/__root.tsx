@@ -5,6 +5,7 @@ import {
 	Outlet,
 	Scripts,
 } from "@tanstack/react-router";
+import { LanguageProvider } from "#/lib/i18n";
 import appCss from "../styles.css?url";
 
 interface RouterContext {
@@ -28,14 +29,16 @@ function RootComponent() {
 	const { queryClient } = Route.useRouteContext();
 	return (
 		<QueryClientProvider client={queryClient}>
-			<Outlet />
+			<LanguageProvider>
+				<Outlet />
+			</LanguageProvider>
 		</QueryClientProvider>
 	);
 }
 
 function RootDocument({ children }: { children: React.ReactNode }) {
 	return (
-		<html lang="en" className="dark">
+		<html lang="pt-BR" className="dark">
 			<head>
 				<HeadContent />
 			</head>

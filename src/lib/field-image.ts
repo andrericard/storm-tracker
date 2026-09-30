@@ -1,11 +1,12 @@
 import type { Feature, FeatureCollection, LineString } from "geojson";
 import type { ColorScale } from "#/lib/color-scale";
+import { distanceKm } from "#/lib/geo";
 import {
 	latFromMercatorY,
 	type MercatorCorners,
 	mercatorY,
 } from "#/lib/mercator-grid";
-import type { GridSpec } from "#/lib/storm-types";
+import type { GridSpec, LatLon } from "#/lib/storm-types";
 
 const UPSAMPLE = 6;
 const CONTOUR_UPSAMPLE = 4;
@@ -41,6 +42,8 @@ export function fieldImage(
 	grid: GridSpec,
 	values: number[],
 	scale: ColorScale,
+	target: LatLon,
+	radiusKm: number,
 ): FieldImage {
 	const { west, east, south, north } = extent(grid);
 	const width = (grid.cols - 1) * UPSAMPLE;
@@ -65,6 +68,7 @@ export function fieldImage(
 		);
 		for (let i = 0; i < width; i++) {
 			const lon = west + ((i + 0.5) / width) * (east - west);
+			if (distanceKm(target, { lat, lon }) > radiusKm) continue;
 			const [r, g, b, a] = scale.rgba(bilinear(grid, values, lon, lat));
 			const p = (j * width + i) * 4;
 			image.data[p] = r;
@@ -198,6 +202,8 @@ export function contourLines(
 	grid: GridSpec,
 	values: number[],
 	interval: number,
+	target: LatLon,
+	radiusKm: number,
 	decimals = 0,
 ): FeatureCollection<LineString> {
 	const { west, south } = extent(grid);
@@ -233,7 +239,13 @@ export function contourLines(
 			fine,
 			level,
 		);
-		for (const line of joinSegments(segments)) {
+		for (const line of joinSegments(
+			segments.filter((segment) =>
+				segment.every(
+					([lon, lat]) => distanceKm(target, { lat, lon }) <= radiusKm,
+				),
+			),
+		)) {
 			if (line.length < 4) continue;
 			features.push({
 				type: "Feature",

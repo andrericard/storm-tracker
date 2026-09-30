@@ -24,14 +24,15 @@ const OVERSHOOT_MIN_DEPTH_K = 8;
 const OVERSHOOT_MAX_TEMP_K = 210;
 const JUMP_MIN_FLASHES = 60;
 const JUMP_MIN_DELTA = 30;
-const MATCH_DISTANCE_KM = 60;
+
 const FORECAST_MINUTES = 180;
-const NEIGHBOR_MOTION_KM = 250;
+
 const MAX_PLAUSIBLE_SPEED_KMH = 150;
 
 export interface DetectedStorm {
 	snapshot: StormSnapshot;
 	cells: number[];
+	motion?: { vx: number; vy: number; quality: number };
 }
 
 export interface FrameGrid {
@@ -300,70 +301,207 @@ export function detectStorms(grid: GridSpec, frame: FrameGrid) {
 	});
 }
 
-export function assignTracks(framesStorms: DetectedStorm[][]) {
-	let nextId = 1;
+export function assignTracks(
+	framesStorms: DetectedStorm[][],
+	grid: GridSpec,
+	times: number[],
+	nextId = 1,
+) {
 	let previous: DetectedStorm[] = [];
-	for (const storms of framesStorms) {
-		const owner = new Map<number, number>();
-		previous.forEach((storm, index) => {
-			for (const cell of storm.cells) owner.set(cell, index);
-		});
+	for (let i = 0; i < framesStorms.length; i++) {
+		const storms = framesStorms[i];
 		const taken = new Set<number>();
-		const ordered = [...storms].sort((a, b) => b.cells.length - a.cells.length);
-		for (const storm of ordered) {
-			const overlap = new Map<number, number>();
-			for (const cell of storm.cells) {
-				const index = owner.get(cell);
-				if (index !== undefined) {
-					overlap.set(index, (overlap.get(index) ?? 0) + 1);
-				}
+		// Reserve known identities before matching new detections.
+		for (const storm of storms)
+			if (storm.snapshot.trackId) {
+				const index = previous.findIndex(
+					(p) => p.snapshot.trackId === storm.snapshot.trackId,
+				);
+				if (index >= 0) taken.add(index);
 			}
-			let match = -1;
-			let best = 0;
-			for (const [index, count] of overlap) {
-				if (!taken.has(index) && count > best) {
-					best = count;
+		const hours = i ? (times[i] - times[i - 1]) / 3_600_000 : 0;
+		for (const storm of [...storms].sort(
+			(a, b) => b.cells.length - a.cells.length,
+		)) {
+			if (storm.snapshot.trackId) continue;
+			let match = -1,
+				best = 0;
+			const motion = storm.motion;
+			const dy = (grid.step * Math.PI * EARTH_RADIUS_KM) / 180;
+			const dx = dy * Math.cos((storm.snapshot.lat * Math.PI) / 180);
+			const dc = motion ? Math.round((motion.vx * hours) / dx) : 0;
+			const dr = motion ? Math.round((motion.vy * hours) / dy) : 0;
+			const shifted = new Set(
+				storm.cells.flatMap((cell) => {
+					const row = Math.floor(cell / grid.cols) - dr,
+						col = (cell % grid.cols) - dc;
+					return row >= 0 && row < grid.rows && col >= 0 && col < grid.cols
+						? [row * grid.cols + col]
+						: [];
+				}),
+			);
+			previous.forEach((candidate, index) => {
+				if (taken.has(index) || hours <= 0 || hours > 0.5) return;
+				const offset = toLocalKm(candidate.snapshot, storm.snapshot);
+				if (
+					Math.hypot(offset.x, offset.y) >
+					MAX_PLAUSIBLE_SPEED_KMH * hours + Math.hypot(dx, dy)
+				)
+					return;
+				const residual = Math.hypot(
+					offset.x - (motion?.vx ?? 0) * hours,
+					offset.y - (motion?.vy ?? 0) * hours,
+				);
+				const overlap = candidate.cells.filter((cell) =>
+					shifted.has(cell),
+				).length;
+				const iou = overlap / (candidate.cells.length + shifted.size - overlap);
+				const areaRatio =
+					Math.min(candidate.cells.length, storm.cells.length) /
+					Math.max(candidate.cells.length, storm.cells.length);
+				if (!overlap && (residual > 15 || areaRatio < 0.4)) return;
+				const score = iou + (0.2 * areaRatio) / (1 + residual / 10);
+				if (score > best) {
+					best = score;
 					match = index;
 				}
-			}
-			if (match < 0) {
-				let nearest = MATCH_DISTANCE_KM;
-				previous.forEach((candidate, index) => {
-					if (taken.has(index)) return;
-					const d = distanceKm(candidate.snapshot, storm.snapshot);
-					if (d < nearest) {
-						nearest = d;
-						match = index;
-					}
-				});
-			}
+			});
 			if (match >= 0) {
 				taken.add(match);
 				storm.snapshot.trackId = previous[match].snapshot.trackId;
-			} else {
-				storm.snapshot.trackId = nextId++;
-			}
+			} else storm.snapshot.trackId = nextId++;
 		}
 		previous = storms;
 	}
+	return nextId;
 }
 
-function fitVelocity(points: { t: number; x: number; y: number }[]) {
-	if (points.length < 2) return { vx: 0, vy: 0 };
-	const n = points.length;
-	const meanT = points.reduce((s, p) => s + p.t, 0) / n;
-	const meanX = points.reduce((s, p) => s + p.x, 0) / n;
-	const meanY = points.reduce((s, p) => s + p.y, 0) / n;
-	let stt = 0;
-	let stx = 0;
-	let sty = 0;
-	for (const p of points) {
-		stt += (p.t - meanT) ** 2;
-		stx += (p.t - meanT) * (p.x - meanX);
-		sty += (p.t - meanT) * (p.y - meanY);
-	}
-	if (stt === 0) return { vx: 0, vy: 0 };
-	return { vx: stx / stt, vy: sty / stt };
+// Track the temperature pattern, not changes in the coldest pixel or centroid.
+export function matrixMotion(
+	grid: GridSpec,
+	current: FrameGrid,
+	previous: FrameGrid,
+	cells: number[],
+) {
+	const hours = (current.time - previous.time) / 3_600_000;
+	if (hours <= 0 || hours > 0.5 || !cells.length) return undefined;
+	const lat = grid.south + Math.floor(cells[0] / grid.cols) * grid.step;
+	const dyKm = (grid.step * Math.PI * EARTH_RADIUS_KM) / 180;
+	const dxKm = dyKm * Math.cos((lat * Math.PI) / 180);
+	const limit = Math.ceil(
+		(MAX_PLAUSIBLE_SPEED_KMH * hours) / Math.min(dxKm, dyKm),
+	);
+	const rows = cells.map((c) => Math.floor(c / grid.cols));
+	const cols = cells.map((c) => c % grid.cols);
+	const samples: { r: number; c: number; value: number }[] = [];
+	const r0 = Math.max(0, Math.min(...rows) - 3),
+		r1 = Math.min(grid.rows - 1, Math.max(...rows) + 3);
+	const c0 = Math.max(0, Math.min(...cols) - 3),
+		c1 = Math.min(grid.cols - 1, Math.max(...cols) + 3);
+	// ponytail: bounded patch sampling; use pyramidal optical flow if larger domains need it.
+	const stride = Math.max(
+		1,
+		Math.ceil(Math.sqrt(((r1 - r0 + 1) * (c1 - c0 + 1)) / 400)),
+	);
+	for (let r = r0; r <= r1; r += stride)
+		for (let c = c0; c <= c1; c += stride) {
+			const value = current.brightnessTemp[r * grid.cols + c];
+			if (Number.isFinite(value)) samples.push({ r, c, value });
+		}
+	let best = -1,
+		runner = -1,
+		bestX = 0,
+		bestY = 0;
+	const scores: { score: number; x: number; y: number }[] = [];
+	for (let y = -limit; y <= limit; y++)
+		for (let x = -limit; x <= limit; x++) {
+			if (Math.hypot(x * dxKm, y * dyKm) / hours > MAX_PLAUSIBLE_SPEED_KMH)
+				continue;
+			let n = 0,
+				a = 0,
+				b = 0,
+				aa = 0,
+				bb = 0,
+				ab = 0;
+			for (const p of samples) {
+				const r = p.r - y,
+					c = p.c - x;
+				if (r < 0 || r >= grid.rows || c < 0 || c >= grid.cols) continue;
+				const v = previous.brightnessTemp[r * grid.cols + c];
+				if (!Number.isFinite(v)) continue;
+				n++;
+				a += p.value;
+				b += v;
+				aa += p.value * p.value;
+				bb += v * v;
+				ab += p.value * v;
+			}
+			if (
+				n < 12 ||
+				n < samples.length * 0.8 ||
+				aa - (a * a) / n < n ||
+				bb - (b * b) / n < n
+			)
+				continue;
+			const score =
+				(ab - (a * b) / n) / Math.sqrt((aa - (a * a) / n) * (bb - (b * b) / n));
+			scores.push({ score, x, y });
+			if (score > best) {
+				best = score;
+				bestX = x;
+				bestY = y;
+			}
+		}
+	for (const p of scores)
+		if (Math.hypot(p.x - bestX, p.y - bestY) > 1.5)
+			runner = Math.max(runner, p.score);
+	if (best < 0.65 || best - runner < 0.015) return undefined;
+	return {
+		vx: (bestX * dxKm) / hours,
+		vy: (bestY * dyKm) / hours,
+		quality: best,
+	};
+}
+
+function stableVelocity(
+	samples: { vx: number; vy: number; quality: number }[],
+) {
+	const median = (values: number[]) => {
+		const sorted = [...values].sort((a, b) => a - b);
+		return sorted[Math.floor(sorted.length / 2)];
+	};
+	const mx = median(samples.map((s) => s.vx)),
+		my = median(samples.map((s) => s.vy));
+	const deviations = samples.map((s) => Math.hypot(s.vx - mx, s.vy - my));
+	const limit = Math.max(15, 3 * median(deviations));
+	let vx = 0,
+		vy = 0,
+		weight = 0;
+	let count = 0;
+	samples.forEach((s, i) => {
+		if (deviations[i] > limit) return;
+		count++;
+		const w = s.quality * (1 + i / samples.length);
+		vx += s.vx * w;
+		vy += s.vy * w;
+		weight += w;
+	});
+	vx /= weight;
+	vy /= weight;
+	const spread = Math.sqrt(
+		samples.reduce(
+			(sum, s, i) =>
+				sum +
+				(deviations[i] <= limit ? (s.vx - vx) ** 2 + (s.vy - vy) ** 2 : 0),
+			0,
+		) / count,
+	);
+	return {
+		vx,
+		vy,
+		count,
+		consistent: count >= 2 && spread <= Math.max(15, Math.hypot(vx, vy) * 0.5),
+	};
 }
 
 function detectLightningJump(counts: number[]) {
@@ -388,6 +526,7 @@ function statusRank(status: ThreatStatus) {
 		"overhead",
 		"approaching",
 		"passing",
+		"uncertain",
 		"stationary",
 		"distant",
 	].indexOf(status);
@@ -411,40 +550,24 @@ export function summarizeTracks(
 			if (match) history.push({ t: times[i], snapshot: match.snapshot });
 		}
 		const origin: LatLon = { lat: snapshot.lat, lon: snapshot.lon };
-		const velocity = fitVelocity(
-			history.slice(-4).map((h) => ({
-				t: (h.t - times[latestIndex]) / 3_600_000,
-				...toLocalKm(origin, h.snapshot),
-			})),
-		);
-		const plausible =
-			Math.hypot(velocity.vx, velocity.vy) <= MAX_PLAUSIBLE_SPEED_KMH;
-		return {
-			snapshot,
-			history,
-			origin,
-			velocity: plausible ? velocity : { vx: 0, vy: 0 },
-			tracked: history.length >= 2 && plausible,
-		};
+		const samples = framesStorms
+			.slice(start, latestIndex + 1)
+			.flatMap((storms) =>
+				storms.flatMap((s) =>
+					s.snapshot.trackId === snapshot.trackId && s.motion ? [s.motion] : [],
+				),
+			);
+		const recentMotion = framesStorms
+			.slice(Math.max(0, latestIndex - 1))
+			.some((storms) =>
+				storms.some((s) => s.snapshot.trackId === snapshot.trackId && s.motion),
+			);
+		const velocity = samples.length
+			? stableVelocity(samples)
+			: { vx: 0, vy: 0, count: 0, consistent: false };
+		const tracked = velocity.consistent && recentMotion;
+		return { snapshot, history, origin, velocity, tracked };
 	});
-	for (const motion of motions) {
-		if (motion.tracked) continue;
-		let weightSum = 0;
-		let vxSum = 0;
-		let vySum = 0;
-		for (const other of motions) {
-			if (!other.tracked) continue;
-			const d = distanceKm(motion.origin, other.origin);
-			if (d > NEIGHBOR_MOTION_KM) continue;
-			const weight = 1 / Math.max(d, 10);
-			weightSum += weight;
-			vxSum += other.velocity.vx * weight;
-			vySum += other.velocity.vy * weight;
-		}
-		if (weightSum > 0) {
-			motion.velocity = { vx: vxSum / weightSum, vy: vySum / weightSum };
-		}
-	}
 	const summaries = motions.map(
 		({ snapshot, history, origin, velocity, tracked }) => {
 			const { vx, vy } = velocity;
@@ -487,7 +610,7 @@ export function summarizeTracks(
 			let etaMinutes: number | null = null;
 			if (distance <= radiusKm) {
 				etaMinutes = 0;
-			} else if (vSquared > 0) {
+			} else if (tracked && vSquared > 0) {
 				const a = vSquared;
 				const b = 2 * (relative.x * vMin.x + relative.y * vMin.y);
 				const c = relative.x ** 2 + relative.y ** 2 - reach * reach;
@@ -500,13 +623,14 @@ export function summarizeTracks(
 
 			let status: ThreatStatus = "distant";
 			if (distance <= radiusKm) status = "overhead";
+			else if (!tracked) status = "uncertain";
 			else if (speedKmh < 5) status = "stationary";
 			else if (etaMinutes !== null) status = "approaching";
 			else if (closestApproachKm <= radiusKm + 30 && tClosest > 0)
 				status = "passing";
 
 			const forecast = [];
-			if (speedKmh >= 5) {
+			if (tracked && speedKmh >= 5) {
 				for (let m = 15; m <= FORECAST_MINUTES; m += 15) {
 					const p = destination(origin, headingDeg, (speedKmh * m) / 60);
 					forecast.push({ minutes: m, lon: p.lon, lat: p.lat });
@@ -534,6 +658,7 @@ export function summarizeTracks(
 				closestApproachMinutes: Math.round(tClosest),
 				etaMinutes,
 				motionInferred: !tracked,
+				motionSamples: velocity.count,
 				lightningJump: detectLightningJump(
 					history.map((h) => h.snapshot.flashCount),
 				),

@@ -26,11 +26,11 @@ Files are cached in the OS temp folder (`storm-tracker-cache`) for 4 hours.
 
 ## How it works
 
-1. The last 6 full-disk scans (10 min apart) are cropped to a 400 km radius around the target and binned to a 0.05° grid.
+1. The last 12 full-disk scans (10 min apart) are cropped to a 400 km radius around the target and binned to a 0.05° grid.
 2. Storms are segmented with multiple brightness temperature thresholds (235 K down to 195 K) so large systems are split into their convective cores.
-3. Cores are matched frame to frame by overlap, then by distance, to build tracks.
-4. Motion is a least-squares fit over the last positions; new cells borrow motion from nearby tracked cells.
-5. Closest approach and ETA to the target are computed from the motion vector.
+3. Cores are matched using motion-compensated overlap, area and distance. IDs are retained across overlapping requests in a bounded in-memory cache. IDs reset on server restarts or cache eviction; deployments with independent workers do not share identities.
+4. Motion uses normalized cross-correlation of local temperature matrices 10 to 20 minutes apart, with coverage, texture, correlation and ambiguity checks. The last six valid-window measurements (up to 50 minutes) are combined with outlier rejection and modest recency weighting. Centroid changes no longer set the velocity. One missing estimate is tolerated; two missing scans or insufficient history hide the forecast and mark motion uncertain.
+5. Closest approach and ETA use the motion vector and an equivalent-area cloud radius. The dashed line is a constant-motion extrapolation out to 180 minutes, not a prediction of storm growth or decay. Skill at that range is unverified.
 6. Satellite severe-weather signals per cell: lightning jump (sudden rise in GLM flash rate) and overshooting top (minimum brightness temperature much colder than the surrounding anvil).
 7. Storm environment per cell from GFS: LCL height, 0–6 km bulk shear, storm-relative helicity computed with the cell's own tracked motion, and a significant-tornado-parameter style index (CAPE × LCL × SRH × shear). In the Southern Hemisphere SRH is negative for favourable environments; the index uses its magnitude.
 
@@ -58,3 +58,13 @@ The app needs a Node runtime for the `/api/frames` route, so it cannot run on st
 ## API
 
 `GET /api/frames?lat=-23.7661&lon=-53.3206&frames=6&radius=400`
+
+## Interface and validation
+
+Português and English are selectable in the layer panel; the choice is stored in the browser. The ruler adds map-anchored points with cumulative distance in km. Finish drawing to resume normal map clicks; Undo and Clear edit the line. Weather refreshes do not move or remove it. GFS fields and pressure contours are clipped to the same target radius as the clouds.
+
+Run `npm test`, `npx tsc --noEmit` and `npm run build`. Synthetic regression checks cover translation despite cloud cooling, vector outliers, missing scans, identity continuity, glossary translations and circular clipping. These checks do not establish meteorological forecast accuracy; replaying observed cases is the next validation step.
+
+### Why not use surface wind as the storm direction?
+
+The existing GFS input already includes winds at multiple heights for shear and helicity. Surface winds alone are not the motion of a deep cloud system. GOES also publishes [Derived Motion Winds](https://www.ncei.noaa.gov/access/metadata/landing-page/bin/iso?id=gov.noaa.ncdc%3AC01518), tracking features across images and associating vectors with pressure levels. This update measures the existing infrared matrices directly; it does not ingest the DMW product or blend GFS winds into the trajectory. [Pysteps motion estimation](https://pysteps.readthedocs.io/en/stable/generated/pysteps.motion.lucaskanade.dense_lucaskanade.html) provides a reference for image-based tracking and outlier filtering; our implementation uses local correlation, not Lucas-Kanade.

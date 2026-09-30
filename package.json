@@ -12,7 +12,8 @@
     "preview": "vite preview",
     "format": "biome format",
     "lint": "biome lint",
-    "check": "biome check"
+    "check": "biome check",
+    "test": "node tests/check.mjs"
   },
   "dependencies": {
     "@mattnucc/gribberish": "^1.7.0",

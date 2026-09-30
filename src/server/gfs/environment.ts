@@ -163,7 +163,7 @@ export function environmentAt(
 }
 
 function trackMotion(track: TrackSummary): Motion | null {
-	if (track.speedKmh < 5) return null;
+	if (track.motionInferred || track.speedKmh < 5) return null;
 	const speed = track.speedKmh / 3.6;
 	const heading = (track.headingDeg * Math.PI) / 180;
 	return { u: speed * Math.sin(heading), v: speed * Math.cos(heading) };

@@ -26,6 +26,7 @@ import {
 	type DetectedStorm,
 	detectStorms,
 	type FrameGrid,
+	matrixMotion,
 	summarizeTracks,
 } from "#/server/goes/storms";
 
@@ -42,6 +43,11 @@ interface ProcessedFrame {
 	storms: DetectedStorm[];
 }
 
+// IDs persist across overlapping refresh windows within this server process.
+const trackWindows = new Map<
+	string,
+	{ nextId: number; frames: Map<number, Map<number, number>> }
+>();
 const processedCache = new Map<string, ProcessedFrame>();
 
 function boundingBox(target: LatLon, radiusKm: number): BoundingBox {
@@ -284,10 +290,50 @@ export async function buildFrames(
 		),
 	);
 
-	const framesStorms = processed.map((p) =>
+	const framesStorms: DetectedStorm[][] = processed.map((p) =>
 		p.storms.map((s) => ({ cells: s.cells, snapshot: { ...s.snapshot } })),
 	);
-	assignTracks(framesStorms);
+	const key = `${target.lat},${target.lon},${radiusKm}`;
+	const saved = trackWindows.get(key);
+	for (let i = 0; i < processed.length; i++) {
+		for (const storm of framesStorms[i]) {
+			storm.snapshot.trackId =
+				saved?.frames
+					.get(processed[i].grid.time)
+					?.get(Math.min(...storm.cells)) ?? 0;
+			if (i > 0)
+				storm.motion = matrixMotion(
+					grid,
+					processed[i].grid,
+					processed[Math.max(0, i - 2)].grid,
+					storm.cells,
+				);
+		}
+	}
+	const nextId = assignTracks(
+		framesStorms,
+		grid,
+		processed.map((p) => p.grid.time),
+		saved?.nextId ?? 1,
+	);
+	trackWindows.set(key, {
+		nextId,
+		frames: new Map(
+			processed.map((p, i) => [
+				p.grid.time,
+				new Map(
+					framesStorms[i].map((s) => [
+						Math.min(...s.cells),
+						s.snapshot.trackId,
+					]),
+				),
+			]),
+		),
+	});
+	if (trackWindows.size > 20) {
+		const oldest = trackWindows.keys().next().value;
+		if (oldest) trackWindows.delete(oldest);
+	}
 	const tracks = summarizeTracks(
 		processed.map((p) => p.grid.time),
 		framesStorms,
