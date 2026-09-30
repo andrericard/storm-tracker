@@ -12,6 +12,7 @@ import {
 	RAIN_SCALE,
 	RAIN_TICKS,
 } from "#/lib/overlays";
+import { SIMEPAR_SCALE, type SimeparStyle } from "#/lib/simepar-image";
 import type { EnvironmentModel } from "#/lib/storm-types";
 
 interface LayerControlsProps {
@@ -43,6 +44,12 @@ const TOGGLES: {
 	{ key: "simepar", label: "Radar (Simepar)" },
 	{ key: "lightning", label: "Lightning (GLM)" },
 	{ key: "tracks", label: "Tracks & forecast" },
+];
+
+const SIMEPAR_STYLES: { value: SimeparStyle; label: string }[] = [
+	{ value: "raw", label: "Original" },
+	{ value: "keyed", label: "Keyed" },
+	{ value: "hd", label: "HD" },
 ];
 
 const OVERLAY_CHOICES: { value: OverlayChoice; label: string }[] = [
@@ -147,17 +154,22 @@ export function LayerControls({
 					</div>
 					{key === "simepar" && settings.simepar && (
 						<div className="flex flex-col gap-2 border-l pl-3">
-							<div className="flex items-center justify-between gap-2">
-								<Label htmlFor="simeparKeyed" className="text-sm font-normal">
-									{t("Remove map background")}
-								</Label>
-								<Switch
-									id="simeparKeyed"
-									checked={settings.simeparKeyed}
-									onCheckedChange={(checked) =>
-										onChange({ ...settings, simeparKeyed: checked })
-									}
-								/>
+							<div className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-1">
+								{SIMEPAR_STYLES.map(({ value, label }) => (
+									<Button
+										key={value}
+										size="sm"
+										variant={
+											settings.simeparStyle === value ? "default" : "ghost"
+										}
+										className="h-7"
+										onClick={() =>
+											onChange({ ...settings, simeparStyle: value })
+										}
+									>
+										{t(label)}
+									</Button>
+								))}
 							</div>
 							<div>
 								<div className="mb-2 flex items-center justify-between text-sm">
@@ -274,7 +286,7 @@ export function MapLegends({ settings }: { settings: MapSettings }) {
 			{settings.simepar && (
 				<Legend
 					title={t("Radar intensity (Simepar)")}
-					gradient="linear-gradient(90deg, #15803d 0%, #22c55e 25%, #facc15 50%, #dc2626 75%, #d946ef 100%)"
+					gradient={SIMEPAR_SCALE.cssGradient}
 					min={0}
 					max={100}
 					ticks={[10, 50, 90]}

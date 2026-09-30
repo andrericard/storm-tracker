@@ -8,6 +8,7 @@ try {
  const {GLOSSARY,OVERLAY_DESCRIPTIONS}=await server.ssrLoadModule('/src/lib/glossary.ts');
  const {fieldImage,contourLines}=await server.ssrLoadModule('/src/lib/field-image.ts');
  const {distanceKm}=await server.ssrLoadModule('/src/lib/geo.ts');
+ const {simeparField}=await server.ssrLoadModule('/src/lib/simepar-image.ts');
  const {parseSimepar,mergeForecasts}=await server.ssrLoadModule('/src/server/forecast.ts');
  const grid={west:-54,south:-25,step:0.05,cols:60,rows:60};
  function frame(shift,time,cooling=0) {
@@ -72,5 +73,15 @@ try {
  assert.deepEqual(merged.map(h=>h.time),['2026-09-30T10:00','2026-09-30T11:00','2026-09-30T12:00'],'merge both sources by local hour inside the window');
  assert.deepEqual(merged[0].ecmwf,{rainMm:1.5,rainChance:80});assert.equal(merged[0].simepar.rainChance,40);
  assert.equal(merged[1].ecmwf,null);assert.equal(merged[2].simepar,null);
- console.log('Passed: Simepar parsing, forecast merge, matrix motion, cooling, outliers, missing scans, rolling IDs, translations and circular overlays.');
+ const px=new Uint8ClampedArray(400*400*4).fill(90);
+ const paint=(x,y,[r,g,b])=>{const p=(y*400+x)*4;px[p]=r;px[p+1]=g;px[p+2]=b;};
+ for(let y=100;y<120;y++)for(let x=100;x<120;x++)paint(x,y,[248,241,1]);
+ paint(200,200,[248,0,2]);
+ const field=simeparField(px,400,400);
+ const at=(g,x,y)=>g[y*400+x];
+ assert.equal(at(field.presence,110,110),1,'solid echo is present');
+ assert(Math.abs(at(field.valueSum,110,110)/at(field.valueCount,110,110)-0.26)<0.03,'yellow maps to its legend position');
+ assert(at(field.presence,200,200)<0.4,'isolated pixel is dropped as speckle');
+ assert.equal(at(field.presence,300,300),0,'grey basemap is not rain');
+ console.log('Passed: Simepar HD field, Simepar parsing, forecast merge, matrix motion, cooling, outliers, missing scans, rolling IDs, translations and circular overlays.');
 } finally {await server.close();}

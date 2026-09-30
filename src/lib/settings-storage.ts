@@ -1,4 +1,5 @@
 import type { MapSettings } from "#/components/storm-map";
+import type { SimeparStyle } from "#/lib/simepar-image";
 
 const STORAGE_KEY = "storm-tracker:settings";
 
@@ -12,7 +13,7 @@ export const DEFAULT_SETTINGS: MapSettings = {
 	rain: false,
 	radar: false,
 	simepar: false,
-	simeparKeyed: true,
+	simeparStyle: "keyed",
 	simeparOpacity: 0.85,
 	overlay: "none",
 	exaggeration: 5,
@@ -20,6 +21,7 @@ export const DEFAULT_SETTINGS: MapSettings = {
 
 const VIEWS = new Set(["2d", "3d"]);
 const OVERLAYS = new Set(["none", "mslp", "cape", "shear6", "srh3"]);
+const SIMEPAR_STYLES = new Set(["raw", "keyed", "hd"]);
 
 function clampNumber(
 	value: unknown,
@@ -56,7 +58,9 @@ export function loadSettings(): MapSettings {
 			rain: bool(parsed.rain, DEFAULT_SETTINGS.rain),
 			radar: bool(parsed.radar, DEFAULT_SETTINGS.radar),
 			simepar: bool(parsed.simepar, DEFAULT_SETTINGS.simepar),
-			simeparKeyed: bool(parsed.simeparKeyed, DEFAULT_SETTINGS.simeparKeyed),
+			simeparStyle: SIMEPAR_STYLES.has(parsed.simeparStyle as string)
+				? (parsed.simeparStyle as SimeparStyle)
+				: DEFAULT_SETTINGS.simeparStyle,
 			simeparOpacity: clampNumber(
 				parsed.simeparOpacity,
 				0.1,

@@ -25,7 +25,11 @@ import {
 import { OVERLAYS, type OverlayChoice } from "#/lib/overlays";
 import { RADAR_CORNERS } from "#/lib/radar";
 import { rainImage } from "#/lib/rain-image";
-import { loadSimeparImage, SIMEPAR_FRAME_COUNT } from "#/lib/simepar-image";
+import {
+	loadSimeparImage,
+	SIMEPAR_FRAME_COUNT,
+	type SimeparStyle,
+} from "#/lib/simepar-image";
 import type { Frame, FramesResponse, LatLon } from "#/lib/storm-types";
 
 const BASEMAP_STYLE =
@@ -44,7 +48,7 @@ export interface MapSettings {
 	rain: boolean;
 	radar: boolean;
 	simepar: boolean;
-	simeparKeyed: boolean;
+	simeparStyle: SimeparStyle;
 	simeparOpacity: number;
 	overlay: OverlayChoice;
 	exaggeration: number;
@@ -653,12 +657,12 @@ export function StormMap({
 			});
 			return;
 		}
-		const key = `${simeparFrame}:${settings.simeparKeyed}`;
+		const key = `${simeparFrame}:${settings.simeparStyle}`;
 		let image = simeparImages.current.get(key);
 		if (!image) {
 			image = loadSimeparImage(
 				simeparFrame,
-				settings.simeparKeyed,
+				settings.simeparStyle,
 				simeparEpoch,
 			);
 			simeparImages.current.set(key, image);
@@ -676,7 +680,7 @@ export function StormMap({
 	}, [
 		loaded,
 		settings.simepar,
-		settings.simeparKeyed,
+		settings.simeparStyle,
 		simeparFrame,
 		simeparEpoch,
 	]);
