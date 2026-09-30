@@ -10,6 +10,7 @@ import {
 import { StormPanel } from "#/components/storm-panel";
 import { Timeline } from "#/components/timeline";
 import { TooltipProvider } from "#/components/ui/tooltip";
+import { loadSettings, saveSettings } from "#/lib/settings-storage";
 import type { FramesResponse, LatLon } from "#/lib/storm-types";
 
 const DEFAULT_TARGET = { lat: -23.7661, lon: -53.3206, name: "Umuarama, PR" };
@@ -77,19 +78,12 @@ function StormTrackerPage() {
 	const [picking, setPicking] = useState(false);
 	const [selectedTrackId, setSelectedTrackId] = useState<number | null>(null);
 	const [flyTo, setFlyTo] = useState<FlyToRequest | null>(null);
-	const [settings, setSettings] = useState<MapSettings>({
-		view: "2d",
-		clouds: true,
-		lowClouds: false,
-		opacity: 0.8,
-		lightning: true,
-		tracks: true,
-		rain: false,
-		radar: false,
-		overlay: "none",
-		exaggeration: 5,
-	});
+	const [settings, setSettings] = useState<MapSettings>(loadSettings);
 	const flyKey = useRef(0);
+
+	useEffect(() => {
+		saveSettings(settings);
+	}, [settings]);
 
 	useEffect(() => {
 		if (frameTotal && followLive) setFrameIndex(frameTotal - 1);
