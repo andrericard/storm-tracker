@@ -12,7 +12,7 @@ import { basename, join } from "node:path";
 
 const BUCKET_URL = "https://noaa-goes19.s3.amazonaws.com";
 const CACHE_DIR = join(tmpdir(), "storm-tracker-cache");
-const CACHE_MAX_AGE_MS = 4 * 60 * 60 * 1000;
+const CACHE_MAX_AGE_MS = 90 * 60 * 1000;
 const RECENT_LISTING_TTL_MS = 60 * 1000;
 
 export interface S3Object {

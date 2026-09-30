@@ -14,7 +14,7 @@ import type { FramesResponse, LatLon } from "#/lib/storm-types";
 
 const DEFAULT_TARGET = { lat: -23.7661, lon: -53.3206, name: "Umuarama, PR" };
 const FRAME_COUNT = 6;
-const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+const REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 const PLAYBACK_INTERVAL_MS = 700;
 
 interface SearchParams {
