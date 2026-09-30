@@ -1,0 +1,254 @@
+import { distanceKm, EARTH_RADIUS_KM } from "#/lib/geo";
+import type {
+	Frame,
+	FramesResponse,
+	GridSpec,
+	LatLon,
+} from "#/lib/storm-types";
+import {
+	type AbiWindow,
+	type BoundingBox,
+	readAbiWindow,
+	readFlashes,
+	sampleWindow,
+	windowPixelLatLon,
+} from "#/server/goes/netcdf";
+import {
+	download,
+	listRecent,
+	mapLimit,
+	type S3Object,
+} from "#/server/goes/s3";
+import {
+	assignTracks,
+	type DetectedStorm,
+	detectStorms,
+	type FrameGrid,
+	summarizeTracks,
+} from "#/server/goes/storms";
+
+const GRID_STEP_DEG = 0.05;
+const FRAME_INTERVAL_MS = 10 * 60 * 1000;
+const RENDER_THRESHOLD_K = 270;
+const SURFACE_TEMP_K = 300;
+const LAPSE_RATE_K_PER_M = 0.0065;
+
+interface ProcessedFrame {
+	grid: FrameGrid;
+	frame: Omit<Frame, "storms">;
+	storms: DetectedStorm[];
+}
+
+const processedCache = new Map<string, ProcessedFrame>();
+
+function boundingBox(target: LatLon, radiusKm: number): BoundingBox {
+	const dLat = (radiusKm / EARTH_RADIUS_KM) * (180 / Math.PI);
+	const dLon = dLat / Math.cos((target.lat * Math.PI) / 180);
+	return {
+		west: target.lon - dLon,
+		east: target.lon + dLon,
+		south: target.lat - dLat,
+		north: target.lat + dLat,
+	};
+}
+
+function gridFor(bbox: BoundingBox): GridSpec {
+	const west = Math.floor(bbox.west / GRID_STEP_DEG) * GRID_STEP_DEG;
+	const south = Math.floor(bbox.south / GRID_STEP_DEG) * GRID_STEP_DEG;
+	return {
+		west: Math.round(west * 1000) / 1000,
+		south: Math.round(south * 1000) / 1000,
+		step: GRID_STEP_DEG,
+		cols: Math.ceil((bbox.east - west) / GRID_STEP_DEG),
+		rows: Math.ceil((bbox.north - south) / GRID_STEP_DEG),
+	};
+}
+
+function estimateHeight(brightnessTemp: number) {
+	return Math.min(
+		17000,
+		Math.max(500, (SURFACE_TEMP_K - brightnessTemp) / LAPSE_RATE_K_PER_M),
+	);
+}
+
+function binBrightnessTemp(grid: GridSpec, window: AbiWindow) {
+	const output = new Float32Array(grid.cols * grid.rows).fill(Number.NaN);
+	for (let r = 0; r < window.rows; r++) {
+		for (let c = 0; c < window.cols; c++) {
+			const value = window.values[r * window.cols + c];
+			if (Number.isNaN(value)) continue;
+			const position = windowPixelLatLon(window, r, c);
+			if (!position) continue;
+			const col = Math.floor((position.lon - grid.west) / grid.step);
+			const row = Math.floor((position.lat - grid.south) / grid.step);
+			if (row < 0 || col < 0 || row >= grid.rows || col >= grid.cols) continue;
+			const index = row * grid.cols + col;
+			const current = output[index];
+			if (Number.isNaN(current) || value < current) output[index] = value;
+		}
+	}
+	return output;
+}
+
+function cellIndex(grid: GridSpec, lon: number, lat: number) {
+	const col = Math.floor((lon - grid.west) / grid.step);
+	const row = Math.floor((lat - grid.south) / grid.step);
+	if (row < 0 || col < 0 || row >= grid.rows || col >= grid.cols) return -1;
+	return row * grid.cols + col;
+}
+
+async function processFrame(
+	grid: GridSpec,
+	bbox: BoundingBox,
+	target: LatLon,
+	radiusKm: number,
+	c13: S3Object,
+	acha: S3Object | undefined,
+	glm: S3Object[],
+): Promise<ProcessedFrame> {
+	const cacheKey = `${target.lat},${target.lon},${radiusKm}|${c13.key}|${acha?.key ?? ""}|${glm.length}|${grid.west},${grid.south},${grid.cols},${grid.rows}`;
+	const cached = processedCache.get(cacheKey);
+	if (cached) return cached;
+
+	const [c13Path, achaPath, glmPaths] = await Promise.all([
+		download(c13.key),
+		acha ? download(acha.key).catch(() => null) : Promise.resolve(null),
+		mapLimit(glm, 8, (o) => download(o.key).catch(() => null)),
+	]);
+
+	const brightnessTemp = binBrightnessTemp(
+		grid,
+		await readAbiWindow(c13Path, "CMI", bbox),
+	);
+	const heightWindow = achaPath
+		? await readAbiWindow(achaPath, "HT", bbox).catch(() => null)
+		: null;
+
+	const height = new Float32Array(grid.cols * grid.rows);
+	const cells = {
+		index: [] as number[],
+		brightnessTemp: [] as number[],
+		height: [] as number[],
+	};
+	for (let row = 0; row < grid.rows; row++) {
+		for (let col = 0; col < grid.cols; col++) {
+			const index = row * grid.cols + col;
+			const bt = brightnessTemp[index];
+			if (!(bt < RENDER_THRESHOLD_K)) continue;
+			const center = {
+				lat: grid.south + (row + 0.5) * grid.step,
+				lon: grid.west + (col + 0.5) * grid.step,
+			};
+			if (distanceKm(target, center) > radiusKm) {
+				brightnessTemp[index] = Number.NaN;
+				continue;
+			}
+			let h = Number.NaN;
+			if (heightWindow) {
+				h = sampleWindow(
+					heightWindow,
+					grid.south + (row + 0.5) * grid.step,
+					grid.west + (col + 0.5) * grid.step,
+				);
+			}
+			if (!(h > 0)) h = estimateHeight(bt);
+			height[index] = h;
+			cells.index.push(index);
+			cells.brightnessTemp.push(Math.round(bt * 10));
+			cells.height.push(Math.round(h / 50) * 50);
+		}
+	}
+
+	const flashes: number[] = [];
+	for (const path of glmPaths) {
+		if (!path) continue;
+		const found = await readFlashes(path, bbox).catch(() => []);
+		for (const value of found) flashes.push(value);
+	}
+	const flashCells: number[] = [];
+	for (let i = 0; i < flashes.length; i += 2) {
+		const index = cellIndex(grid, flashes[i], flashes[i + 1]);
+		if (index >= 0) flashCells.push(index);
+	}
+
+	const frameGrid: FrameGrid = {
+		time: c13.start,
+		brightnessTemp,
+		height,
+		flashCells: Int32Array.from(flashCells),
+	};
+	const processed: ProcessedFrame = {
+		grid: frameGrid,
+		frame: {
+			time: new Date(c13.start).toISOString(),
+			heightSource: heightWindow ? "acha" : "estimated",
+			cells,
+			flashes,
+		},
+		storms: detectStorms(grid, frameGrid),
+	};
+	const glmComplete =
+		glm.length >= 29 || Date.now() - c13.start > 25 * 60 * 1000;
+	if (glmComplete && heightWindow) {
+		processedCache.set(cacheKey, processed);
+		if (processedCache.size > 60) {
+			const oldest = processedCache.keys().next().value;
+			if (oldest) processedCache.delete(oldest);
+		}
+	}
+	return processed;
+}
+
+export async function buildFrames(
+	target: LatLon,
+	frameCount: number,
+	radiusKm: number,
+): Promise<FramesResponse> {
+	const bbox = boundingBox(target, radiusKm);
+	const grid = gridFor(bbox);
+	const since = Date.now() - (frameCount + 2) * FRAME_INTERVAL_MS;
+
+	const [c13Objects, achaObjects, glmObjects] = await Promise.all([
+		listRecent("ABI-L2-CMIPF", since, (key) => key.includes("-M6C13_")),
+		listRecent("ABI-L2-ACHAF", since),
+		listRecent("GLM-L2-LCFA", since),
+	]);
+	const selected = c13Objects.slice(-frameCount);
+	const achaByStamp = new Map(achaObjects.map((o) => [o.stamp, o]));
+
+	const processed = await mapLimit(selected, 3, (c13) =>
+		processFrame(
+			grid,
+			bbox,
+			target,
+			radiusKm,
+			c13,
+			achaByStamp.get(c13.stamp),
+			glmObjects.filter(
+				(o) => o.start >= c13.start && o.start < c13.start + FRAME_INTERVAL_MS,
+			),
+		),
+	);
+
+	const framesStorms = processed.map((p) =>
+		p.storms.map((s) => ({ cells: s.cells, snapshot: { ...s.snapshot } })),
+	);
+	assignTracks(framesStorms);
+	const tracks = summarizeTracks(
+		processed.map((p) => p.grid.time),
+		framesStorms,
+		target,
+	);
+
+	return {
+		target,
+		radiusKm,
+		grid,
+		frames: processed.map((p, i) => ({
+			...p.frame,
+			storms: framesStorms[i].map((s) => s.snapshot),
+		})),
+		tracks,
+		generatedAt: new Date().toISOString(),
+	};
+}
