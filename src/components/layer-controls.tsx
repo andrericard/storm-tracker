@@ -1,4 +1,5 @@
-import type { MapSettings } from "#/components/storm-map";
+import type { MapSettings, ViewMode } from "#/components/storm-map";
+import { Button } from "#/components/ui/button";
 import { Label } from "#/components/ui/label";
 import { Separator } from "#/components/ui/separator";
 import { Slider } from "#/components/ui/slider";
@@ -10,11 +11,16 @@ interface LayerControlsProps {
 	onChange: (settings: MapSettings) => void;
 }
 
+const VIEW_MODES: { value: ViewMode; label: string }[] = [
+	{ value: "2d", label: "2D" },
+	{ value: "3d", label: "3D" },
+];
+
 const TOGGLES: {
 	key: "clouds" | "lowClouds" | "lightning" | "tracks";
 	label: string;
 }[] = [
-	{ key: "clouds", label: "3D cloud tops" },
+	{ key: "clouds", label: "Cloud layer" },
 	{ key: "lowClouds", label: "Show warm / low clouds" },
 	{ key: "lightning", label: "Lightning (GLM)" },
 	{ key: "tracks", label: "Tracks & forecast" },
@@ -54,6 +60,19 @@ function Legend() {
 export function LayerControls({ settings, onChange }: LayerControlsProps) {
 	return (
 		<div className="pointer-events-auto flex w-64 flex-col gap-3 rounded-xl border bg-background/85 p-4 shadow-2xl backdrop-blur-md">
+			<div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
+				{VIEW_MODES.map(({ value, label }) => (
+					<Button
+						key={value}
+						size="sm"
+						variant={settings.view === value ? "default" : "ghost"}
+						className="h-7"
+						onClick={() => onChange({ ...settings, view: value })}
+					>
+						{label}
+					</Button>
+				))}
+			</div>
 			{TOGGLES.map(({ key, label }) => (
 				<div key={key} className="flex items-center justify-between gap-2">
 					<Label htmlFor={key} className="text-sm font-normal">
@@ -70,6 +89,21 @@ export function LayerControls({ settings, onChange }: LayerControlsProps) {
 			))}
 			<div>
 				<div className="mb-2 flex items-center justify-between text-sm">
+					<span>Cloud opacity</span>
+					<span className="text-muted-foreground tabular-nums">
+						{Math.round(settings.opacity * 100)}%
+					</span>
+				</div>
+				<Slider
+					min={0.1}
+					max={1}
+					step={0.05}
+					value={[settings.opacity]}
+					onValueChange={([value]) => onChange({ ...settings, opacity: value })}
+				/>
+			</div>
+			<div className={settings.view === "2d" ? "opacity-40" : undefined}>
+				<div className="mb-2 flex items-center justify-between text-sm">
 					<span>Vertical exaggeration</span>
 					<span className="text-muted-foreground tabular-nums">
 						{settings.exaggeration}×
@@ -79,6 +113,7 @@ export function LayerControls({ settings, onChange }: LayerControlsProps) {
 					min={1}
 					max={20}
 					step={1}
+					disabled={settings.view === "2d"}
 					value={[settings.exaggeration]}
 					onValueChange={([value]) =>
 						onChange({ ...settings, exaggeration: value })

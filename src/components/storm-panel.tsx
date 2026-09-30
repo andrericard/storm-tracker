@@ -44,11 +44,13 @@ const TONE_STYLES = {
 
 function Metric({ label, value }: { label: string; value: React.ReactNode }) {
 	return (
-		<div className="flex flex-col">
+		<div className="flex min-w-0 flex-col whitespace-nowrap">
 			<span className="text-[10px] uppercase tracking-wider text-muted-foreground">
 				{label}
 			</span>
-			<span className="text-sm font-medium tabular-nums">{value}</span>
+			<span className="flex items-center text-sm font-medium tabular-nums">
+				{value}
+			</span>
 		</div>
 	);
 }
@@ -68,7 +70,7 @@ function Trend({
 	return (
 		<span
 			className={cn(
-				"ml-1 inline-flex items-center text-xs",
+				"ml-1 inline-flex shrink-0 items-center text-xs",
 				worsening ? "text-red-400" : "text-emerald-400",
 			)}
 		>
@@ -98,7 +100,7 @@ function TrackCard({
 				selected && "ring-2 ring-sky-400/70",
 			)}
 		>
-			<div className="flex items-center justify-between gap-2">
+			<div className="flex items-center justify-between gap-2 whitespace-nowrap">
 				<div className="flex items-center gap-2">
 					<span
 						className="size-2.5 rounded-full"
@@ -113,11 +115,11 @@ function TrackCard({
 						{track.severity}
 					</Badge>
 				</div>
-				<span className="text-xs text-muted-foreground">
+				<span className="truncate text-xs text-muted-foreground">
 					{STATUS_LABELS[track.status]}
 				</span>
 			</div>
-			<div className="mt-1 text-xs text-muted-foreground">
+			<div className="mt-1 truncate text-xs text-muted-foreground">
 				{track.distanceKm} km {compass(track.bearingFromTargetDeg)} of target
 				{track.speedKmh >= 5 &&
 					` · moving ${compass(track.headingDeg)} ${track.speedKmh} km/h${track.motionInferred ? " (est.)" : ""}`}
@@ -125,7 +127,7 @@ function TrackCard({
 					track.etaMinutes > 0 &&
 					` · ETA ${formatMinutes(track.etaMinutes)}`}
 			</div>
-			<div className="mt-3 grid grid-cols-4 gap-2">
+			<div className="mt-3 flex justify-between gap-3">
 				<Metric
 					label="Top temp"
 					value={
@@ -172,7 +174,7 @@ export function StormPanel({
 	const status = data ? headline(data.tracks[0], data.radiusKm) : null;
 	const latestFrame = data?.frames.at(-1);
 	return (
-		<div className="pointer-events-auto flex max-h-[calc(100vh-2rem)] w-[380px] flex-col rounded-xl border bg-background/85 shadow-2xl backdrop-blur-md">
+		<div className="pointer-events-auto flex max-h-[calc(100vh-2rem)] w-[400px] flex-col rounded-xl border bg-background/85 shadow-2xl backdrop-blur-md">
 			<div className="flex items-center justify-between p-4 pb-3">
 				<div className="flex items-center gap-2">
 					<CloudLightning className="size-5 text-sky-400" />

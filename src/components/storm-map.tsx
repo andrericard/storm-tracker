@@ -1,12 +1,14 @@
 import maplibregl, {
 	type ExpressionSpecification,
 	type GeoJSONSource,
+	type ImageSource,
 	type Map as MapLibreMap,
 	type MapMouseEvent,
 	type Marker,
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { infraredImage, TRANSPARENT_PIXEL } from "#/lib/infrared-image";
 import {
 	BRIGHTNESS_TEMP_STOPS,
 	cellsToGeoJSON,
@@ -22,9 +24,13 @@ const BASEMAP_STYLE =
 	"https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 const LABEL_FONT = ["Open Sans Bold"];
 
+export type ViewMode = "2d" | "3d";
+
 export interface MapSettings {
+	view: ViewMode;
 	clouds: boolean;
 	lowClouds: boolean;
+	opacity: number;
 	lightning: boolean;
 	tracks: boolean;
 	exaggeration: number;
@@ -48,6 +54,23 @@ interface StormMapProps {
 
 const LOW_CLOUD_LIMIT_K = 250;
 const CLOUD_BASE_M = 1500;
+const CLOUD_DEPTH_STOPS: [number, number][] = [
+	[200, 16000],
+	[225, 6000],
+	[250, 2500],
+	[270, 1200],
+];
+const PLACEHOLDER_CORNERS: [
+	[number, number],
+	[number, number],
+	[number, number],
+	[number, number],
+] = [
+	[0, 0.001],
+	[0.001, 0.001],
+	[0.001, 0],
+	[0, 0],
+];
 
 function colorExpression(): ExpressionSpecification {
 	return [
@@ -63,9 +86,17 @@ function setData(map: MapLibreMap, source: string, data: GeoJSON.GeoJSON) {
 }
 
 function addLayers(map: MapLibreMap) {
+	const labelsId = map
+		.getStyle()
+		.layers.find((layer) => layer.type === "symbol")?.id;
 	for (const id of ["rings", "clouds", "storms", "tracks", "flashes"]) {
 		map.addSource(id, { type: "geojson", data: EMPTY_COLLECTION });
 	}
+	map.addSource("infrared", {
+		type: "image",
+		url: TRANSPARENT_PIXEL,
+		coordinates: PLACEHOLDER_CORNERS,
+	});
 
 	map.addLayer({
 		id: "rings-line",
@@ -79,17 +110,33 @@ function addLayers(map: MapLibreMap) {
 			"line-dasharray": [2, 3],
 		},
 	});
-	map.addLayer({
-		id: "clouds-3d",
-		type: "fill-extrusion",
-		source: "clouds",
-		paint: {
-			"fill-extrusion-color": colorExpression(),
-			"fill-extrusion-opacity": 0.85,
-			"fill-extrusion-height": 0,
-			"fill-extrusion-base": 0,
+	map.addLayer(
+		{
+			id: "infrared-2d",
+			type: "raster",
+			source: "infrared",
+			paint: {
+				"raster-opacity": 0.9,
+				"raster-resampling": "linear",
+				"raster-fade-duration": 0,
+			},
 		},
-	});
+		labelsId,
+	);
+	map.addLayer(
+		{
+			id: "clouds-3d",
+			type: "fill-extrusion",
+			source: "clouds",
+			paint: {
+				"fill-extrusion-color": colorExpression(),
+				"fill-extrusion-opacity": 0.85,
+				"fill-extrusion-height": 0,
+				"fill-extrusion-base": 0,
+			},
+		},
+		labelsId,
+	);
 	map.addLayer({
 		id: "storm-fill",
 		type: "fill",
@@ -240,6 +287,7 @@ export function StormMap({
 	const pickingRef = useRef(picking);
 	const handlersRef = useRef({ onPick, onSelectTrack });
 	const initialCenterRef = useRef(target);
+	const viewRef = useRef(settings.view);
 	const [loaded, setLoaded] = useState(false);
 
 	pickingRef.current = picking;
@@ -253,7 +301,7 @@ export function StormMap({
 			style: BASEMAP_STYLE,
 			center: [center.lon, center.lat],
 			zoom: 6.2,
-			pitch: 55,
+			pitch: viewRef.current === "2d" ? 0 : 55,
 			bearing: -12,
 			maxPitch: 80,
 			canvasContextAttributes: { antialias: true },
@@ -345,11 +393,53 @@ export function StormMap({
 	useEffect(() => {
 		const map = mapRef.current;
 		if (!map || !loaded) return;
+		const source = map.getSource("infrared") as ImageSource | undefined;
+		if (!data || !frame || !settings.clouds || settings.view !== "2d") {
+			source?.updateImage({
+				url: TRANSPARENT_PIXEL,
+				coordinates: PLACEHOLDER_CORNERS,
+			});
+			return;
+		}
+		const image = infraredImage(
+			data.grid,
+			frame,
+			settings.lowClouds,
+			LOW_CLOUD_LIMIT_K,
+		);
+		source?.updateImage({ url: image.url, coordinates: image.corners });
+	}, [loaded, data, frame, settings.clouds, settings.view, settings.lowClouds]);
+
+	useEffect(() => {
+		const map = mapRef.current;
+		if (!map || !loaded || viewRef.current === settings.view) return;
+		viewRef.current = settings.view;
+		if (settings.view === "2d") {
+			map.easeTo({ pitch: 0, bearing: 0, duration: 800 });
+		} else {
+			map.easeTo({ pitch: 55, bearing: -12, duration: 800 });
+		}
+	}, [loaded, settings.view]);
+
+	useEffect(() => {
+		const map = mapRef.current;
+		if (!map || !loaded) return;
 		const visibility = (visible: boolean) => (visible ? "visible" : "none");
 		map.setLayoutProperty(
 			"clouds-3d",
 			"visibility",
-			visibility(settings.clouds),
+			visibility(settings.clouds && settings.view === "3d"),
+		);
+		map.setLayoutProperty(
+			"infrared-2d",
+			"visibility",
+			visibility(settings.clouds && settings.view === "2d"),
+		);
+		map.setPaintProperty("infrared-2d", "raster-opacity", settings.opacity);
+		map.setPaintProperty(
+			"clouds-3d",
+			"fill-extrusion-opacity",
+			settings.opacity,
 		);
 		for (const id of ["flash-glow", "flash-core"]) {
 			map.setLayoutProperty(id, "visibility", visibility(settings.lightning));
@@ -384,15 +474,8 @@ export function StormMap({
 						"interpolate",
 						["linear"],
 						["get", "bt"],
-						200,
-						16000,
-						225,
-						6000,
-						250,
-						2500,
-						270,
-						1200,
-					],
+						...CLOUD_DEPTH_STOPS.flat(),
+					] as ExpressionSpecification,
 				],
 			],
 			exaggeration,

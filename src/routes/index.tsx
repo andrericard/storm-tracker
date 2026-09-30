@@ -77,8 +77,10 @@ function StormTrackerPage() {
 	const [selectedTrackId, setSelectedTrackId] = useState<number | null>(null);
 	const [flyTo, setFlyTo] = useState<FlyToRequest | null>(null);
 	const [settings, setSettings] = useState<MapSettings>({
+		view: "3d",
 		clouds: true,
 		lowClouds: false,
+		opacity: 0.8,
 		lightning: true,
 		tracks: true,
 		exaggeration: 5,
