@@ -6,7 +6,6 @@ const PT: Record<string, string> = {
 	"Rain rate (GOES)": "Chuva (GOES)",
 	"Radar (IPMet)": "Radar (IPMet)",
 	"Radar (Simepar)": "Radar (Simepar)",
-	Keyed: "Recorte",
 	Opacity: "Opacidade",
 	"Lightning (GLM)": "Raios (GLM)",
 	"Tracks & forecast": "Trajetórias e projeção",

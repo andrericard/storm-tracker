@@ -48,7 +48,6 @@ const TOGGLES: {
 
 const SIMEPAR_STYLES: { value: SimeparStyle; label: string }[] = [
 	{ value: "raw", label: "Original" },
-	{ value: "keyed", label: "Keyed" },
 	{ value: "hd", label: "HD" },
 ];
 
@@ -154,7 +153,7 @@ export function LayerControls({
 					</div>
 					{key === "simepar" && settings.simepar && (
 						<div className="flex flex-col gap-2 border-l pl-3">
-							<div className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-1">
+							<div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
 								{SIMEPAR_STYLES.map(({ value, label }) => (
 									<Button
 										key={value}

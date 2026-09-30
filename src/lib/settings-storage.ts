@@ -13,7 +13,7 @@ export const DEFAULT_SETTINGS: MapSettings = {
 	rain: false,
 	radar: false,
 	simepar: false,
-	simeparStyle: "keyed",
+	simeparStyle: "hd",
 	simeparOpacity: 0.85,
 	overlay: "none",
 	exaggeration: 5,
@@ -21,7 +21,7 @@ export const DEFAULT_SETTINGS: MapSettings = {
 
 const VIEWS = new Set(["2d", "3d"]);
 const OVERLAYS = new Set(["none", "mslp", "cape", "shear6", "srh3"]);
-const SIMEPAR_STYLES = new Set(["raw", "keyed", "hd"]);
+const SIMEPAR_STYLES = new Set(["raw", "hd"]);
 
 function clampNumber(
 	value: unknown,
