@@ -9,6 +9,7 @@ import {
 } from "#/components/storm-map";
 import { StormPanel } from "#/components/storm-panel";
 import { Timeline } from "#/components/timeline";
+import { TooltipProvider } from "#/components/ui/tooltip";
 import type { FramesResponse, LatLon } from "#/lib/storm-types";
 
 const DEFAULT_TARGET = { lat: -23.7661, lon: -53.3206, name: "Umuarama, PR" };
@@ -77,12 +78,14 @@ function StormTrackerPage() {
 	const [selectedTrackId, setSelectedTrackId] = useState<number | null>(null);
 	const [flyTo, setFlyTo] = useState<FlyToRequest | null>(null);
 	const [settings, setSettings] = useState<MapSettings>({
-		view: "3d",
+		view: "2d",
 		clouds: true,
 		lowClouds: false,
 		opacity: 0.8,
 		lightning: true,
 		tracks: true,
+		rain: false,
+		overlay: "none",
 		exaggeration: 5,
 	});
 	const flyKey = useRef(0);
@@ -139,46 +142,52 @@ function StormTrackerPage() {
 	};
 
 	return (
-		<main className="fixed inset-0 overflow-hidden bg-[#0b0f17]">
-			<StormMap
-				data={data}
-				frame={data?.frames[Math.min(frameIndex, frameTotal - 1)]}
-				target={target}
-				settings={settings}
-				picking={picking}
-				selectedTrackId={selectedTrackId}
-				flyTo={flyTo}
-				onPick={pickTarget}
-				onSelectTrack={setSelectedTrackId}
-			/>
-			<div className="pointer-events-none absolute top-4 bottom-4 left-4 flex flex-col">
-				<StormPanel
+		<TooltipProvider delayDuration={150}>
+			<main className="fixed inset-0 overflow-hidden bg-[#0b0f17]">
+				<StormMap
 					data={data}
-					locationName={locationName}
-					isLoading={query.isLoading}
-					isFetching={query.isFetching}
-					error={query.error}
+					frame={data?.frames[Math.min(frameIndex, frameTotal - 1)]}
+					target={target}
+					settings={settings}
 					picking={picking}
 					selectedTrackId={selectedTrackId}
-					onTogglePicking={() => setPicking((value) => !value)}
-					onRefresh={() => query.refetch()}
-					onSelectTrack={(track) => focusTrack(track.trackId)}
+					flyTo={flyTo}
+					onPick={pickTarget}
+					onSelectTrack={setSelectedTrackId}
 				/>
-			</div>
-			<div className="pointer-events-none absolute top-4 right-4">
-				<LayerControls settings={settings} onChange={setSettings} />
-			</div>
-			{data && (
-				<div className="pointer-events-none absolute bottom-6 left-1/2 -translate-x-1/2">
-					<Timeline
-						frames={data.frames}
-						index={Math.min(frameIndex, frameTotal - 1)}
-						playing={playing}
-						onIndexChange={changeFrame}
-						onTogglePlay={togglePlay}
+				<div className="pointer-events-none absolute top-4 bottom-4 left-4 flex flex-col">
+					<StormPanel
+						data={data}
+						locationName={locationName}
+						isLoading={query.isLoading}
+						isFetching={query.isFetching}
+						error={query.error}
+						picking={picking}
+						selectedTrackId={selectedTrackId}
+						onTogglePicking={() => setPicking((value) => !value)}
+						onRefresh={() => query.refetch()}
+						onSelectTrack={(track) => focusTrack(track.trackId)}
 					/>
 				</div>
-			)}
-		</main>
+				<div className="pointer-events-none absolute top-4 right-4">
+					<LayerControls
+						settings={settings}
+						model={data?.environment?.model ?? null}
+						onChange={setSettings}
+					/>
+				</div>
+				{data && (
+					<div className="pointer-events-none absolute bottom-6 left-1/2 -translate-x-1/2">
+						<Timeline
+							frames={data.frames}
+							index={Math.min(frameIndex, frameTotal - 1)}
+							playing={playing}
+							onIndexChange={changeFrame}
+							onTogglePlay={togglePlay}
+						/>
+					</div>
+				)}
+			</main>
+		</TooltipProvider>
 	);
 }

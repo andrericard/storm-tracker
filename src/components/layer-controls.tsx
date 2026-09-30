@@ -4,10 +4,19 @@ import { Label } from "#/components/ui/label";
 import { Separator } from "#/components/ui/separator";
 import { Slider } from "#/components/ui/slider";
 import { Switch } from "#/components/ui/switch";
+import { OVERLAY_DESCRIPTIONS } from "#/lib/glossary";
 import { BRIGHTNESS_TEMP_STOPS, kelvinToCelsius } from "#/lib/map-data";
+import {
+	OVERLAYS,
+	type OverlayChoice,
+	RAIN_SCALE,
+	RAIN_TICKS,
+} from "#/lib/overlays";
+import type { EnvironmentModel } from "#/lib/storm-types";
 
 interface LayerControlsProps {
 	settings: MapSettings;
+	model: EnvironmentModel | null;
 	onChange: (settings: MapSettings) => void;
 }
 
@@ -17,39 +26,57 @@ const VIEW_MODES: { value: ViewMode; label: string }[] = [
 ];
 
 const TOGGLES: {
-	key: "clouds" | "lowClouds" | "lightning" | "tracks";
+	key: "clouds" | "lowClouds" | "rain" | "lightning" | "tracks";
 	label: string;
 }[] = [
 	{ key: "clouds", label: "Cloud layer" },
 	{ key: "lowClouds", label: "Show warm / low clouds" },
+	{ key: "rain", label: "Rain rate (GOES)" },
 	{ key: "lightning", label: "Lightning (GLM)" },
 	{ key: "tracks", label: "Tracks & forecast" },
 ];
 
-function Legend() {
-	const min = BRIGHTNESS_TEMP_STOPS[0][0];
-	const max = BRIGHTNESS_TEMP_STOPS[BRIGHTNESS_TEMP_STOPS.length - 1][0];
-	const gradient = BRIGHTNESS_TEMP_STOPS.map(
-		([k, color]) => `${color} ${((k - min) / (max - min)) * 100}%`,
-	).join(", ");
-	const ticks = [190, 210, 235, 270];
+const OVERLAY_CHOICES: { value: OverlayChoice; label: string }[] = [
+	{ value: "none", label: "Off" },
+	{ value: "mslp", label: "Air pressure" },
+	{ value: "cape", label: "Storm energy (CAPE)" },
+	{ value: "shear6", label: "Wind shear" },
+	{ value: "srh3", label: "Rotation (helicity)" },
+];
+
+const IR_MIN = BRIGHTNESS_TEMP_STOPS[0][0];
+const IR_MAX = BRIGHTNESS_TEMP_STOPS[BRIGHTNESS_TEMP_STOPS.length - 1][0];
+const IR_GRADIENT = `linear-gradient(90deg, ${BRIGHTNESS_TEMP_STOPS.map(
+	([k, color]) => `${color} ${((k - IR_MIN) / (IR_MAX - IR_MIN)) * 100}%`,
+).join(", ")})`;
+
+function Legend({
+	title,
+	gradient,
+	min,
+	max,
+	ticks,
+	format,
+}: {
+	title: string;
+	gradient: string;
+	min: number;
+	max: number;
+	ticks: number[];
+	format: (value: number) => string;
+}) {
 	return (
 		<div>
-			<div className="mb-1.5 text-xs text-muted-foreground">
-				Cloud top temperature
-			</div>
-			<div
-				className="h-2.5 rounded-full"
-				style={{ background: `linear-gradient(90deg, ${gradient})` }}
-			/>
+			<div className="mb-1.5 text-xs text-muted-foreground">{title}</div>
+			<div className="h-2.5 rounded-full" style={{ background: gradient }} />
 			<div className="relative mt-1 h-3 text-[10px] text-muted-foreground tabular-nums">
-				{ticks.map((k) => (
+				{ticks.map((value) => (
 					<span
-						key={k}
+						key={value}
 						className="absolute -translate-x-1/2"
-						style={{ left: `${((k - min) / (max - min)) * 100}%` }}
+						style={{ left: `${((value - min) / (max - min)) * 100}%` }}
 					>
-						{kelvinToCelsius(k)}°
+						{format(value)}
 					</span>
 				))}
 			</div>
@@ -57,7 +84,18 @@ function Legend() {
 	);
 }
 
-export function LayerControls({ settings, onChange }: LayerControlsProps) {
+function formatModel(model: EnvironmentModel) {
+	const hour = model.cycle.slice(8);
+	return `GFS ${hour}z +${model.forecastHour}h`;
+}
+
+export function LayerControls({
+	settings,
+	model,
+	onChange,
+}: LayerControlsProps) {
+	const overlay =
+		settings.overlay === "none" ? null : OVERLAYS[settings.overlay];
 	return (
 		<div className="pointer-events-auto flex w-64 flex-col gap-3 rounded-xl border bg-background/85 p-4 shadow-2xl backdrop-blur-md">
 			<div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
@@ -87,6 +125,33 @@ export function LayerControls({ settings, onChange }: LayerControlsProps) {
 					/>
 				</div>
 			))}
+			<div>
+				<div className="mb-1.5 flex items-center justify-between text-sm">
+					<span>Environment overlay</span>
+					{model && (
+						<span className="text-[10px] text-muted-foreground">
+							{formatModel(model)}
+						</span>
+					)}
+				</div>
+				<div className="flex flex-col gap-1">
+					{OVERLAY_CHOICES.map(({ value, label }) => (
+						<Button
+							key={value}
+							size="sm"
+							variant={settings.overlay === value ? "default" : "outline"}
+							className="h-7 justify-start px-2 text-xs"
+							disabled={!model && value !== "none"}
+							onClick={() => onChange({ ...settings, overlay: value })}
+						>
+							{label}
+						</Button>
+					))}
+				</div>
+				<p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+					{OVERLAY_DESCRIPTIONS[settings.overlay]}
+				</p>
+			</div>
 			<div>
 				<div className="mb-2 flex items-center justify-between text-sm">
 					<span>Cloud opacity</span>
@@ -121,7 +186,34 @@ export function LayerControls({ settings, onChange }: LayerControlsProps) {
 				/>
 			</div>
 			<Separator />
-			<Legend />
+			<Legend
+				title="Cloud top temperature"
+				gradient={IR_GRADIENT}
+				min={IR_MIN}
+				max={IR_MAX}
+				ticks={[190, 210, 235, 270]}
+				format={(k) => `${kelvinToCelsius(k)}°`}
+			/>
+			{settings.rain && (
+				<Legend
+					title="Rain rate (mm/h)"
+					gradient={RAIN_SCALE.cssGradient}
+					min={RAIN_SCALE.stops[0][0]}
+					max={RAIN_SCALE.stops[RAIN_SCALE.stops.length - 1][0]}
+					ticks={RAIN_TICKS}
+					format={(v) => `${v}`}
+				/>
+			)}
+			{overlay && (
+				<Legend
+					title={`${overlay.label} (${overlay.unit})`}
+					gradient={overlay.scale.cssGradient}
+					min={overlay.scale.stops[0][0]}
+					max={overlay.scale.stops[overlay.scale.stops.length - 1][0]}
+					ticks={overlay.ticks}
+					format={(v) => `${v}`}
+				/>
+			)}
 		</div>
 	);
 }

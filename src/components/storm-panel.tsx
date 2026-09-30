@@ -2,13 +2,17 @@ import {
 	ArrowDownRight,
 	ArrowUpRight,
 	CloudLightning,
+	CloudRain,
 	Crosshair,
 	Loader2,
 	MapPin,
 	Navigation,
 	RefreshCw,
+	Tornado,
+	TrendingUp,
 	Zap,
 } from "lucide-react";
+import { Help } from "#/components/help";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Separator } from "#/components/ui/separator";
@@ -19,8 +23,14 @@ import {
 	STATUS_LABELS,
 } from "#/lib/format";
 import { compass } from "#/lib/geo";
+import { GLOSSARY, type GlossaryKey } from "#/lib/glossary";
 import { kelvinToCelsius, SEVERITY_COLORS } from "#/lib/map-data";
-import type { FramesResponse, TrackSummary } from "#/lib/storm-types";
+import type {
+	FramesResponse,
+	StormEnvironment,
+	TornadoRisk,
+	TrackSummary,
+} from "#/lib/storm-types";
 import { cn } from "#/lib/utils";
 
 interface StormPanelProps {
@@ -42,11 +52,33 @@ const TONE_STYLES = {
 	calm: "border-emerald-500/30 bg-emerald-500/10 text-emerald-100",
 };
 
-function Metric({ label, value }: { label: string; value: React.ReactNode }) {
+const RISK_STYLES: Record<TornadoRisk, string> = {
+	none: "border-border text-muted-foreground",
+	low: "border-yellow-500/60 bg-yellow-500/10 text-yellow-200",
+	moderate: "border-orange-500/60 bg-orange-500/10 text-orange-200",
+	high: "border-red-500/70 bg-red-500/15 text-red-200",
+};
+
+const RISK_LABELS: Record<TornadoRisk, string> = {
+	none: "Tornado: none",
+	low: "Tornado: low",
+	moderate: "Tornado: moderate",
+	high: "Tornado: high",
+};
+
+function Metric({
+	label,
+	help,
+	value,
+}: {
+	label: string;
+	help: GlossaryKey;
+	value: React.ReactNode;
+}) {
 	return (
 		<div className="flex min-w-0 flex-col whitespace-nowrap">
 			<span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-				{label}
+				<Help text={GLOSSARY[help]}>{label}</Help>
 			</span>
 			<span className="flex items-center text-sm font-medium tabular-nums">
 				{value}
@@ -81,6 +113,50 @@ function Trend({
 	);
 }
 
+function Chip({
+	icon: Icon,
+	help,
+	className,
+	children,
+}: {
+	icon: React.ComponentType<{ className?: string }>;
+	help: GlossaryKey;
+	className: string;
+	children: React.ReactNode;
+}) {
+	return (
+		<Help
+			text={GLOSSARY[help]}
+			className={cn(
+				"inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[11px] font-medium no-underline",
+				className,
+			)}
+		>
+			<Icon className="size-3" />
+			{children}
+		</Help>
+	);
+}
+
+function EnvironmentRow({ environment }: { environment: StormEnvironment }) {
+	return (
+		<div className="mt-3 flex justify-between gap-3">
+			<Metric label="CAPE" help="cape" value={`${environment.capeJkg} J/kg`} />
+			<Metric
+				label="Shear 0–6"
+				help="shear6"
+				value={`${environment.shear6Ms} m/s`}
+			/>
+			<Metric
+				label="SRH 0–1"
+				help="srh1"
+				value={`${environment.srh1M2s2} m²/s²`}
+			/>
+			<Metric label="LCL" help="lcl" value={`${environment.lclM} m`} />
+		</div>
+	);
+}
+
 function TrackCard({
 	track,
 	selected,
@@ -91,6 +167,49 @@ function TrackCard({
 	onSelect: () => void;
 }) {
 	const color = SEVERITY_COLORS[track.severity];
+	const environment = track.environment;
+	const chips = [
+		track.lightningJump && (
+			<Chip
+				key="jump"
+				icon={TrendingUp}
+				help="lightningJump"
+				className="border-yellow-400/60 bg-yellow-400/10 text-yellow-200"
+			>
+				Lightning jump
+			</Chip>
+		),
+		track.overshootingTop && (
+			<Chip
+				key="ot"
+				icon={ArrowUpRight}
+				help="overshootingTop"
+				className="border-fuchsia-400/60 bg-fuchsia-400/10 text-fuchsia-200"
+			>
+				Overshooting top {track.overshootDepthK}K
+			</Chip>
+		),
+		track.maxRainRateMmh >= 1 && (
+			<Chip
+				key="rain"
+				icon={CloudRain}
+				help="rainRate"
+				className="border-sky-400/50 bg-sky-400/10 text-sky-200"
+			>
+				{track.maxRainRateMmh} mm/h
+			</Chip>
+		),
+		environment && environment.risk !== "none" && (
+			<Chip
+				key="risk"
+				icon={Tornado}
+				help="tornadoRisk"
+				className={RISK_STYLES[environment.risk]}
+			>
+				{RISK_LABELS[environment.risk]} · STP {environment.stp}
+			</Chip>
+		),
+	].filter(Boolean);
 	return (
 		<button
 			type="button"
@@ -127,9 +246,13 @@ function TrackCard({
 					track.etaMinutes > 0 &&
 					` · ETA ${formatMinutes(track.etaMinutes)}`}
 			</div>
+			{chips.length > 0 && (
+				<div className="mt-2 flex flex-wrap gap-1">{chips}</div>
+			)}
 			<div className="mt-3 flex justify-between gap-3">
 				<Metric
 					label="Top temp"
+					help="topTemp"
 					value={
 						<>
 							{kelvinToCelsius(track.minBrightnessTempK)}°C
@@ -139,10 +262,12 @@ function TrackCard({
 				/>
 				<Metric
 					label="Top height"
+					help="topHeight"
 					value={`${(track.maxHeightM / 1000).toFixed(1)} km`}
 				/>
 				<Metric
 					label="Flashes"
+					help="flashes"
 					value={
 						<>
 							{track.flashCount}
@@ -152,10 +277,63 @@ function TrackCard({
 				/>
 				<Metric
 					label="Area"
+					help="area"
 					value={`${Math.round(track.areaKm2).toLocaleString()} km²`}
 				/>
 			</div>
+			{environment && <EnvironmentRow environment={environment} />}
 		</button>
+	);
+}
+
+function TargetEnvironment({
+	environment,
+	rainMmh,
+}: {
+	environment: StormEnvironment;
+	rainMmh: number;
+}) {
+	return (
+		<div className="mt-3 rounded-lg border bg-card/40 p-3">
+			<div className="flex items-center justify-between whitespace-nowrap">
+				<span className="text-xs font-medium">Environment at target</span>
+				<Chip
+					icon={Tornado}
+					help="tornadoRisk"
+					className={RISK_STYLES[environment.risk]}
+				>
+					{RISK_LABELS[environment.risk]}
+				</Chip>
+			</div>
+			<div className="mt-2 flex justify-between gap-3">
+				<Metric
+					label="Pressure"
+					help="pressure"
+					value={`${environment.mslpHpa} hPa`}
+				/>
+				<Metric
+					label="CAPE"
+					help="cape"
+					value={`${environment.capeJkg} J/kg`}
+				/>
+				<Metric label="CIN" help="cin" value={`${environment.cinJkg}`} />
+				<Metric
+					label="Rain now"
+					help="rainNow"
+					value={rainMmh > 0 ? `${rainMmh} mm/h` : "dry"}
+				/>
+			</div>
+			<div className="mt-2 flex justify-between gap-3">
+				<Metric
+					label="Shear 0–6"
+					help="shear6"
+					value={`${environment.shear6Ms} m/s`}
+				/>
+				<Metric label="SRH 0–1" help="srh1" value={`${environment.srh1M2s2}`} />
+				<Metric label="SRH 0–3" help="srh3" value={`${environment.srh3M2s2}`} />
+				<Metric label="LCL" help="lcl" value={`${environment.lclM} m`} />
+			</div>
+		</div>
 	);
 }
 
@@ -183,7 +361,7 @@ export function StormPanel({
 							Storm Tracker
 						</h1>
 						<p className="mt-1 text-xs text-muted-foreground">
-							GOES-19 · ABI + GLM
+							GOES-19 · ABI + GLM · GFS
 						</p>
 					</div>
 				</div>
@@ -251,6 +429,12 @@ export function StormPanel({
 							Latest scan {formatAge(latestFrame.time)}
 						</span>
 					</div>
+				)}
+				{data?.environment && latestFrame && (
+					<TargetEnvironment
+						environment={data.environment.target}
+						rainMmh={latestFrame.rainAtTargetMmh}
+					/>
 				)}
 			</div>
 

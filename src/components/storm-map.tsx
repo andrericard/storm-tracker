@@ -8,6 +8,7 @@ import maplibregl, {
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { contourLines, fieldImage } from "#/lib/field-image";
 import { infraredImage, TRANSPARENT_PIXEL } from "#/lib/infrared-image";
 import {
 	BRIGHTNESS_TEMP_STOPS,
@@ -18,6 +19,8 @@ import {
 	stormsToGeoJSON,
 	tracksToGeoJSON,
 } from "#/lib/map-data";
+import { OVERLAYS, type OverlayChoice } from "#/lib/overlays";
+import { rainImage } from "#/lib/rain-image";
 import type { Frame, FramesResponse, LatLon } from "#/lib/storm-types";
 
 const BASEMAP_STYLE =
@@ -33,6 +36,8 @@ export interface MapSettings {
 	opacity: number;
 	lightning: boolean;
 	tracks: boolean;
+	rain: boolean;
+	overlay: OverlayChoice;
 	exaggeration: number;
 }
 
@@ -89,15 +94,37 @@ function addLayers(map: MapLibreMap) {
 	const labelsId = map
 		.getStyle()
 		.layers.find((layer) => layer.type === "symbol")?.id;
-	for (const id of ["rings", "clouds", "storms", "tracks", "flashes"]) {
+	for (const id of [
+		"rings",
+		"clouds",
+		"storms",
+		"tracks",
+		"flashes",
+		"isobars",
+	]) {
 		map.addSource(id, { type: "geojson", data: EMPTY_COLLECTION });
 	}
-	map.addSource("infrared", {
-		type: "image",
-		url: TRANSPARENT_PIXEL,
-		coordinates: PLACEHOLDER_CORNERS,
-	});
+	for (const id of ["infrared", "environment", "rain"]) {
+		map.addSource(id, {
+			type: "image",
+			url: TRANSPARENT_PIXEL,
+			coordinates: PLACEHOLDER_CORNERS,
+		});
+	}
 
+	map.addLayer(
+		{
+			id: "environment-fill",
+			type: "raster",
+			source: "environment",
+			paint: {
+				"raster-opacity": 1,
+				"raster-resampling": "linear",
+				"raster-fade-duration": 0,
+			},
+		},
+		labelsId,
+	);
 	map.addLayer({
 		id: "rings-line",
 		type: "line",
@@ -125,6 +152,19 @@ function addLayers(map: MapLibreMap) {
 	);
 	map.addLayer(
 		{
+			id: "rain-2d",
+			type: "raster",
+			source: "rain",
+			paint: {
+				"raster-opacity": 0.9,
+				"raster-resampling": "nearest",
+				"raster-fade-duration": 0,
+			},
+		},
+		labelsId,
+	);
+	map.addLayer(
+		{
 			id: "clouds-3d",
 			type: "fill-extrusion",
 			source: "clouds",
@@ -137,6 +177,38 @@ function addLayers(map: MapLibreMap) {
 		},
 		labelsId,
 	);
+	map.addLayer({
+		id: "isobar-lines",
+		type: "line",
+		source: "isobars",
+		layout: { "line-join": "round" },
+		paint: {
+			"line-color": "#f8fafc",
+			"line-width": ["case", ["==", ["%", ["get", "level"], 4], 0], 1.6, 0.8],
+			"line-opacity": 0.75,
+		},
+	});
+	map.addLayer({
+		id: "isobar-labels",
+		type: "symbol",
+		source: "isobars",
+		filter: ["==", ["%", ["get", "level"], 4], 0],
+		layout: {
+			"symbol-placement": "line",
+			"symbol-spacing": 320,
+			"text-field": ["get", "label"],
+			"text-font": LABEL_FONT,
+			"text-size": 10,
+			"text-max-angle": 25,
+			"text-rotation-alignment": "map",
+			"text-pitch-alignment": "viewport",
+		},
+		paint: {
+			"text-color": "#f8fafc",
+			"text-halo-color": "#0b0f17",
+			"text-halo-width": 1.6,
+		},
+	});
 	map.addLayer({
 		id: "storm-fill",
 		type: "fill",
@@ -302,7 +374,7 @@ export function StormMap({
 			center: [center.lon, center.lat],
 			zoom: 6.2,
 			pitch: viewRef.current === "2d" ? 0 : 55,
-			bearing: -12,
+			bearing: viewRef.current === "2d" ? 0 : -12,
 			maxPitch: 80,
 			canvasContextAttributes: { antialias: true },
 		});
@@ -412,6 +484,47 @@ export function StormMap({
 
 	useEffect(() => {
 		const map = mapRef.current;
+		if (!map || !loaded) return;
+		const source = map.getSource("rain") as ImageSource | undefined;
+		if (!data || !frame || !settings.rain || frame.rain.index.length === 0) {
+			source?.updateImage({
+				url: TRANSPARENT_PIXEL,
+				coordinates: PLACEHOLDER_CORNERS,
+			});
+			return;
+		}
+		const image = rainImage(data.grid, frame);
+		source?.updateImage({ url: image.url, coordinates: image.corners });
+	}, [loaded, data, frame, settings.rain]);
+
+	useEffect(() => {
+		const map = mapRef.current;
+		if (!map || !loaded) return;
+		const source = map.getSource("environment") as ImageSource | undefined;
+		const environment = data?.environment;
+		if (!environment || settings.overlay === "none") {
+			source?.updateImage({
+				url: TRANSPARENT_PIXEL,
+				coordinates: PLACEHOLDER_CORNERS,
+			});
+			setData(map, "isobars", EMPTY_COLLECTION);
+			return;
+		}
+		const spec = OVERLAYS[settings.overlay];
+		const values = environment.fields[settings.overlay];
+		const image = fieldImage(environment.grid, values, spec.scale);
+		source?.updateImage({ url: image.url, coordinates: image.corners });
+		setData(
+			map,
+			"isobars",
+			spec.contourInterval
+				? contourLines(environment.grid, values, spec.contourInterval)
+				: EMPTY_COLLECTION,
+		);
+	}, [loaded, data, settings.overlay]);
+
+	useEffect(() => {
+		const map = mapRef.current;
 		if (!map || !loaded || viewRef.current === settings.view) return;
 		viewRef.current = settings.view;
 		if (settings.view === "2d") {
@@ -443,6 +556,19 @@ export function StormMap({
 		);
 		for (const id of ["flash-glow", "flash-core"]) {
 			map.setLayoutProperty(id, "visibility", visibility(settings.lightning));
+		}
+		map.setLayoutProperty("rain-2d", "visibility", visibility(settings.rain));
+		map.setLayoutProperty(
+			"environment-fill",
+			"visibility",
+			visibility(settings.overlay !== "none"),
+		);
+		for (const id of ["isobar-lines", "isobar-labels"]) {
+			map.setLayoutProperty(
+				id,
+				"visibility",
+				visibility(settings.overlay === "mslp"),
+			);
 		}
 		for (const id of [
 			"track-history",

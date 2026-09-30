@@ -1,5 +1,12 @@
 import type { Frame, GridSpec } from "#/lib/storm-types";
 
+export type MercatorCorners = [
+	[number, number],
+	[number, number],
+	[number, number],
+	[number, number],
+];
+
 export interface MercatorGrid {
 	width: number;
 	height: number;
@@ -8,31 +15,33 @@ export interface MercatorGrid {
 	north: number;
 	south: number;
 	cellAt: Int32Array;
-	corners: [
-		[number, number],
-		[number, number],
-		[number, number],
-		[number, number],
-	];
+	corners: MercatorCorners;
 }
 
-function mercatorY(lat: number) {
+export type CellSource = "cells" | "rain";
+
+export function mercatorY(lat: number) {
 	const phi = (lat * Math.PI) / 180;
 	return (1 - Math.log(Math.tan(Math.PI / 4 + phi / 2)) / Math.PI) / 2;
 }
 
-function latFromMercatorY(y: number) {
+export function latFromMercatorY(y: number) {
 	return (Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180) / Math.PI;
 }
 
-const cache = new WeakMap<Frame, MercatorGrid>();
+const cache = new WeakMap<Frame, Partial<Record<CellSource, MercatorGrid>>>();
 
-export function mercatorGrid(grid: GridSpec, frame: Frame): MercatorGrid {
-	const cached = cache.get(frame);
+export function mercatorGrid(
+	grid: GridSpec,
+	frame: Frame,
+	source: CellSource = "cells",
+): MercatorGrid {
+	const entry = cache.get(frame) ?? {};
+	const cached = entry[source];
 	if (cached) return cached;
 
 	const lookup = new Int32Array(grid.cols * grid.rows).fill(-1);
-	frame.cells.index.forEach((cell, i) => {
+	frame[source].index.forEach((cell, i) => {
 		lookup[cell] = i;
 	});
 
@@ -72,6 +81,7 @@ export function mercatorGrid(grid: GridSpec, frame: Frame): MercatorGrid {
 			[west, south],
 		],
 	};
-	cache.set(frame, result);
+	entry[source] = result;
+	cache.set(frame, entry);
 	return result;
 }

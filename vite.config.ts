@@ -5,7 +5,7 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
 	resolve: { tsconfigPaths: true },
-	ssr: { external: ["h5wasm"] },
+	ssr: { external: ["h5wasm", "@mattnucc/gribberish"] },
 	plugins: [
 		tailwindcss(),
 		tanstackStart({ spa: { enabled: true } }),

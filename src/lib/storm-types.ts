@@ -35,13 +35,22 @@ export interface StormSnapshot {
 	maxHeightM: number;
 	flashCount: number;
 	severity: Severity;
+	overshootDepthK: number;
+	maxRainRateMmh: number;
 	hull: [number, number][];
+}
+
+export interface RainCells {
+	index: number[];
+	rate: number[];
 }
 
 export interface Frame {
 	time: string;
 	heightSource: "acha" | "estimated";
 	cells: CloudCells;
+	rain: RainCells;
+	rainAtTargetMmh: number;
 	flashes: number[];
 	storms: StormSnapshot[];
 }
@@ -73,8 +82,45 @@ export interface TrackSummary {
 	closestApproachMinutes: number;
 	etaMinutes: number | null;
 	motionInferred: boolean;
+	lightningJump: boolean;
+	overshootingTop: boolean;
+	overshootDepthK: number;
+	maxRainRateMmh: number;
+	environment?: StormEnvironment;
 	history: [number, number][];
 	forecast: ForecastPoint[];
+}
+
+export type TornadoRisk = "none" | "low" | "moderate" | "high";
+
+export interface StormEnvironment {
+	mslpHpa: number;
+	capeJkg: number;
+	cinJkg: number;
+	liftedIndexK: number;
+	lclM: number;
+	shear6Ms: number;
+	shear1Ms: number;
+	srh1M2s2: number;
+	srh3M2s2: number;
+	stp: number;
+	risk: TornadoRisk;
+	motionFromTrack: boolean;
+}
+
+export interface EnvironmentModel {
+	cycle: string;
+	forecastHour: number;
+	validTime: string;
+}
+
+export type OverlayField = "mslp" | "cape" | "shear6" | "srh3";
+
+export interface EnvironmentResponse {
+	model: EnvironmentModel;
+	grid: GridSpec;
+	fields: Record<OverlayField, number[]>;
+	target: StormEnvironment;
 }
 
 export interface FramesResponse {
@@ -83,5 +129,6 @@ export interface FramesResponse {
 	grid: GridSpec;
 	frames: Frame[];
 	tracks: TrackSummary[];
+	environment: EnvironmentResponse | null;
 	generatedAt: string;
 }

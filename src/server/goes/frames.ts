@@ -5,6 +5,8 @@ import type {
 	GridSpec,
 	LatLon,
 } from "#/lib/storm-types";
+import { attachEnvironments, buildEnvironment } from "#/server/gfs/environment";
+import { fetchGfs } from "#/server/gfs/fetch";
 import {
 	type AbiWindow,
 	type BoundingBox,
@@ -32,6 +34,7 @@ const FRAME_INTERVAL_MS = 10 * 60 * 1000;
 const RENDER_THRESHOLD_K = 270;
 const SURFACE_TEMP_K = 300;
 const LAPSE_RATE_K_PER_M = 0.0065;
+const RAIN_MIN_MMH = 0.2;
 
 interface ProcessedFrame {
 	grid: FrameGrid;
@@ -71,7 +74,11 @@ function estimateHeight(brightnessTemp: number) {
 	);
 }
 
-function binBrightnessTemp(grid: GridSpec, window: AbiWindow) {
+function binWindow(
+	grid: GridSpec,
+	window: AbiWindow,
+	pick: (current: number, value: number) => number,
+) {
 	const output = new Float32Array(grid.cols * grid.rows).fill(Number.NaN);
 	for (let r = 0; r < window.rows; r++) {
 		for (let c = 0; c < window.cols; c++) {
@@ -84,11 +91,16 @@ function binBrightnessTemp(grid: GridSpec, window: AbiWindow) {
 			if (row < 0 || col < 0 || row >= grid.rows || col >= grid.cols) continue;
 			const index = row * grid.cols + col;
 			const current = output[index];
-			if (Number.isNaN(current) || value < current) output[index] = value;
+			output[index] = Number.isNaN(current) ? value : pick(current, value);
 		}
 	}
 	return output;
 }
+
+const binBrightnessTemp = (grid: GridSpec, window: AbiWindow) =>
+	binWindow(grid, window, Math.min);
+const binRainRate = (grid: GridSpec, window: AbiWindow) =>
+	binWindow(grid, window, Math.max);
 
 function cellIndex(grid: GridSpec, lon: number, lat: number) {
 	const col = Math.floor((lon - grid.west) / grid.step);
@@ -104,15 +116,17 @@ async function processFrame(
 	radiusKm: number,
 	c13: S3Object,
 	acha: S3Object | undefined,
+	rrqpe: S3Object | undefined,
 	glm: S3Object[],
 ): Promise<ProcessedFrame> {
-	const cacheKey = `${target.lat},${target.lon},${radiusKm}|${c13.key}|${acha?.key ?? ""}|${glm.length}|${grid.west},${grid.south},${grid.cols},${grid.rows}`;
+	const cacheKey = `${target.lat},${target.lon},${radiusKm}|${c13.key}|${acha?.key ?? ""}|${rrqpe?.key ?? ""}|${glm.length}|${grid.west},${grid.south},${grid.cols},${grid.rows}`;
 	const cached = processedCache.get(cacheKey);
 	if (cached) return cached;
 
-	const [c13Path, achaPath, glmPaths] = await Promise.all([
+	const [c13Path, achaPath, rrqpePath, glmPaths] = await Promise.all([
 		download(c13.key),
 		acha ? download(acha.key).catch(() => null) : Promise.resolve(null),
+		rrqpe ? download(rrqpe.key).catch(() => null) : Promise.resolve(null),
 		mapLimit(glm, 8, (o) => download(o.key).catch(() => null)),
 	]);
 
@@ -123,6 +137,34 @@ async function processFrame(
 	const heightWindow = achaPath
 		? await readAbiWindow(achaPath, "HT", bbox).catch(() => null)
 		: null;
+
+	const rainWindow = rrqpePath
+		? await readAbiWindow(rrqpePath, "RRQPE", bbox).catch(() => null)
+		: null;
+	const rainRate = rainWindow
+		? binRainRate(grid, rainWindow)
+		: new Float32Array(grid.cols * grid.rows).fill(Number.NaN);
+	const rain = { index: [] as number[], rate: [] as number[] };
+	for (let index = 0; index < rainRate.length; index++) {
+		const value = rainRate[index];
+		if (!(value >= RAIN_MIN_MMH)) {
+			rainRate[index] = 0;
+			continue;
+		}
+		const center = {
+			lat: grid.south + (Math.floor(index / grid.cols) + 0.5) * grid.step,
+			lon: grid.west + ((index % grid.cols) + 0.5) * grid.step,
+		};
+		if (distanceKm(target, center) > radiusKm) {
+			rainRate[index] = 0;
+			continue;
+		}
+		rain.index.push(index);
+		rain.rate.push(Math.round(value * 10));
+	}
+	const targetCell = cellIndex(grid, target.lon, target.lat);
+	const rainAtTargetMmh =
+		targetCell >= 0 ? Math.round(rainRate[targetCell] * 10) / 10 : 0;
 
 	const height = new Float32Array(grid.cols * grid.rows);
 	const cells = {
@@ -175,6 +217,7 @@ async function processFrame(
 		time: c13.start,
 		brightnessTemp,
 		height,
+		rainRate,
 		flashCells: Int32Array.from(flashCells),
 	};
 	const processed: ProcessedFrame = {
@@ -183,13 +226,15 @@ async function processFrame(
 			time: new Date(c13.start).toISOString(),
 			heightSource: heightWindow ? "acha" : "estimated",
 			cells,
+			rain,
+			rainAtTargetMmh,
 			flashes,
 		},
 		storms: detectStorms(grid, frameGrid),
 	};
 	const glmComplete =
 		glm.length >= 29 || Date.now() - c13.start > 25 * 60 * 1000;
-	if (glmComplete && heightWindow) {
+	if (glmComplete && heightWindow && rainWindow) {
 		processedCache.set(cacheKey, processed);
 		if (processedCache.size > 60) {
 			const oldest = processedCache.keys().next().value;
@@ -207,14 +252,22 @@ export async function buildFrames(
 	const bbox = boundingBox(target, radiusKm);
 	const grid = gridFor(bbox);
 	const since = Date.now() - (frameCount + 2) * FRAME_INTERVAL_MS;
+	const gfsTask = fetchGfs(bbox).catch((error) => {
+		console.error("GFS unavailable:", error);
+		return null;
+	});
 
-	const [c13Objects, achaObjects, glmObjects] = await Promise.all([
-		listRecent("ABI-L2-CMIPF", since, (key) => key.includes("-M6C13_")),
-		listRecent("ABI-L2-ACHAF", since),
-		listRecent("GLM-L2-LCFA", since),
-	]);
+	const [c13Objects, achaObjects, rrqpeObjects, glmObjects] = await Promise.all(
+		[
+			listRecent("ABI-L2-CMIPF", since, (key) => key.includes("-M6C13_")),
+			listRecent("ABI-L2-ACHAF", since),
+			listRecent("ABI-L2-RRQPEF", since),
+			listRecent("GLM-L2-LCFA", since),
+		],
+	);
 	const selected = c13Objects.slice(-frameCount);
 	const achaByStamp = new Map(achaObjects.map((o) => [o.stamp, o]));
+	const rrqpeByStamp = new Map(rrqpeObjects.map((o) => [o.stamp, o]));
 
 	const processed = await mapLimit(selected, 3, (c13) =>
 		processFrame(
@@ -224,6 +277,7 @@ export async function buildFrames(
 			radiusKm,
 			c13,
 			achaByStamp.get(c13.stamp),
+			rrqpeByStamp.get(c13.stamp),
 			glmObjects.filter(
 				(o) => o.start >= c13.start && o.start < c13.start + FRAME_INTERVAL_MS,
 			),
@@ -239,6 +293,8 @@ export async function buildFrames(
 		framesStorms,
 		target,
 	);
+	const gfs = await gfsTask;
+	if (gfs) attachEnvironments(gfs, tracks);
 
 	return {
 		target,
@@ -249,6 +305,7 @@ export async function buildFrames(
 			storms: framesStorms[i].map((s) => s.snapshot),
 		})),
 		tracks,
+		environment: gfs ? buildEnvironment(gfs, target, tracks) : null,
 		generatedAt: new Date().toISOString(),
 	};
 }

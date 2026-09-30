@@ -18,9 +18,16 @@ const SEGMENT_THRESHOLDS_K = [235, 225, 215, 205, 195];
 const MIN_CELLS = 4;
 const MAX_STORM_AREA_KM2 = 6000;
 const FLASH_SEARCH_CELLS = 3;
+const OVERSHOOT_RING_MIN = 3;
+const OVERSHOOT_RING_MAX = 5;
+const OVERSHOOT_MIN_DEPTH_K = 8;
+const OVERSHOOT_MAX_TEMP_K = 210;
+const JUMP_MIN_FLASHES = 60;
+const JUMP_MIN_DELTA = 30;
 const MATCH_DISTANCE_KM = 60;
 const FORECAST_MINUTES = 180;
 const NEIGHBOR_MOTION_KM = 250;
+const MAX_PLAUSIBLE_SPEED_KMH = 150;
 
 export interface DetectedStorm {
 	snapshot: StormSnapshot;
@@ -31,6 +38,7 @@ export interface FrameGrid {
 	time: number;
 	brightnessTemp: Float32Array;
 	height: Float32Array;
+	rainRate: Float32Array;
 	flashCells: Int32Array;
 }
 
@@ -198,6 +206,32 @@ function assignFlashes(
 	return counts;
 }
 
+function overshootDepth(
+	grid: GridSpec,
+	brightnessTemp: Float32Array,
+	cell: number,
+) {
+	const r0 = Math.floor(cell / grid.cols);
+	const c0 = cell % grid.cols;
+	let sum = 0;
+	let count = 0;
+	for (let dr = -OVERSHOOT_RING_MAX; dr <= OVERSHOOT_RING_MAX; dr++) {
+		for (let dc = -OVERSHOOT_RING_MAX; dc <= OVERSHOOT_RING_MAX; dc++) {
+			const ring = Math.max(Math.abs(dr), Math.abs(dc));
+			if (ring < OVERSHOOT_RING_MIN) continue;
+			const r = r0 + dr;
+			const c = c0 + dc;
+			if (r < 0 || c < 0 || r >= grid.rows || c >= grid.cols) continue;
+			const value = brightnessTemp[r * grid.cols + c];
+			if (!(value < SEGMENT_THRESHOLDS_K[0])) continue;
+			sum += value;
+			count++;
+		}
+	}
+	if (count < 8) return 0;
+	return sum / count - brightnessTemp[cell];
+}
+
 export function detectStorms(grid: GridSpec, frame: FrameGrid) {
 	const all: number[] = [];
 	for (let i = 0; i < frame.brightnessTemp.length; i++) {
@@ -216,7 +250,9 @@ export function detectStorms(grid: GridSpec, frame: FrameGrid) {
 		let lonSum = 0;
 		let latSum = 0;
 		let minBt = Number.POSITIVE_INFINITY;
+		let minCell = cells[0];
 		let maxHeight = 0;
+		let maxRain = 0;
 		const corners: [number, number][] = [];
 		const half = grid.step / 2;
 		for (const cell of cells) {
@@ -229,8 +265,12 @@ export function detectStorms(grid: GridSpec, frame: FrameGrid) {
 			weightSum += weight;
 			lonSum += lon * weight;
 			latSum += lat * weight;
-			minBt = Math.min(minBt, cellBt);
+			if (cellBt < minBt) {
+				minBt = cellBt;
+				minCell = cell;
+			}
 			if (frame.height[cell] > maxHeight) maxHeight = frame.height[cell];
+			if (frame.rainRate[cell] > maxRain) maxRain = frame.rainRate[cell];
 			corners.push(
 				[lon - half, lat - half],
 				[lon + half, lat - half],
@@ -250,6 +290,10 @@ export function detectStorms(grid: GridSpec, frame: FrameGrid) {
 				maxHeightM: Math.round(maxHeight),
 				flashCount,
 				severity: severityFor(minBt, flashCount),
+				overshootDepthK:
+					Math.round(overshootDepth(grid, frame.brightnessTemp, minCell) * 10) /
+					10,
+				maxRainRateMmh: Math.round(maxRain * 10) / 10,
 				hull: convexHull(corners),
 			},
 		};
@@ -322,6 +366,23 @@ function fitVelocity(points: { t: number; x: number; y: number }[]) {
 	return { vx: stx / stt, vy: sty / stt };
 }
 
+function detectLightningJump(counts: number[]) {
+	if (counts.length < 2) return false;
+	const current = counts[counts.length - 1];
+	const deltas = [];
+	for (let i = 1; i < counts.length; i++)
+		deltas.push(counts[i] - counts[i - 1]);
+	const last = deltas[deltas.length - 1];
+	if (current < JUMP_MIN_FLASHES || last < JUMP_MIN_DELTA) return false;
+	const prior = deltas.slice(0, -1);
+	if (prior.length < 2) return current >= 2 * counts[counts.length - 2];
+	const mean = prior.reduce((a, b) => a + b, 0) / prior.length;
+	const sigma = Math.sqrt(
+		prior.reduce((a, b) => a + (b - mean) ** 2, 0) / prior.length,
+	);
+	return last > Math.max(2 * sigma, JUMP_MIN_DELTA);
+}
+
 function statusRank(status: ThreatStatus) {
 	return [
 		"overhead",
@@ -356,12 +417,14 @@ export function summarizeTracks(
 				...toLocalKm(origin, h.snapshot),
 			})),
 		);
+		const plausible =
+			Math.hypot(velocity.vx, velocity.vy) <= MAX_PLAUSIBLE_SPEED_KMH;
 		return {
 			snapshot,
 			history,
 			origin,
-			velocity,
-			tracked: history.length >= 2,
+			velocity: plausible ? velocity : { vx: 0, vy: 0 },
+			tracked: history.length >= 2 && plausible,
 		};
 	});
 	for (const motion of motions) {
@@ -471,6 +534,14 @@ export function summarizeTracks(
 				closestApproachMinutes: Math.round(tClosest),
 				etaMinutes,
 				motionInferred: !tracked,
+				lightningJump: detectLightningJump(
+					history.map((h) => h.snapshot.flashCount),
+				),
+				overshootingTop:
+					snapshot.overshootDepthK >= OVERSHOOT_MIN_DEPTH_K &&
+					snapshot.minBrightnessTempK <= OVERSHOOT_MAX_TEMP_K,
+				overshootDepthK: snapshot.overshootDepthK,
+				maxRainRateMmh: snapshot.maxRainRateMmh,
 				history: history.map(
 					(h) => [h.snapshot.lon, h.snapshot.lat] as [number, number],
 				),
