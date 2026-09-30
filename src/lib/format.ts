@@ -1,5 +1,6 @@
 import { compass } from "#/lib/geo";
 import { type Language, translate } from "#/lib/i18n";
+import { ALERT_RADIUS_KM } from "#/lib/map-data";
 import type { ThreatStatus, TrackSummary } from "#/lib/storm-types";
 
 export function formatMinutes(minutes: number) {
@@ -36,19 +37,16 @@ export const STATUS_LABELS: Record<ThreatStatus, string> = {
 	distant: "Not heading here",
 };
 
-export function headline(
-	track: TrackSummary | undefined,
-	radiusKm: number,
-	language: Language = "pt",
-) {
+export function headline(tracks: TrackSummary[], language: Language = "pt") {
 	const t = (text: string, values?: Record<string, string | number>) =>
 		translate(language, text, values);
+	const track = tracks.find((track) => track.distanceKm <= ALERT_RADIUS_KM);
 	if (!track) {
 		return {
 			tone: "calm" as const,
 			title: t("No convective storms"),
 			detail: t("Nothing with cloud tops below -38°C within {radius} km.", {
-				radius: radiusKm,
+				radius: ALERT_RADIUS_KM,
 			}),
 		};
 	}

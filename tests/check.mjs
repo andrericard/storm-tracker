@@ -8,6 +8,7 @@ try {
  const {GLOSSARY,OVERLAY_DESCRIPTIONS}=await server.ssrLoadModule('/src/lib/glossary.ts');
  const {fieldImage,contourLines}=await server.ssrLoadModule('/src/lib/field-image.ts');
  const {distanceKm}=await server.ssrLoadModule('/src/lib/geo.ts');
+ const {headline}=await server.ssrLoadModule('/src/lib/format.ts');
  const {nextRefreshSlot}=await server.ssrLoadModule('/src/lib/refresh.ts');
  const {simeparField}=await server.ssrLoadModule('/src/lib/simepar-image.ts');
  const {parseSimepar,mergeForecasts}=await server.ssrLoadModule('/src/server/forecast.ts');
@@ -89,5 +90,8 @@ try {
  assert.equal(nextRefreshSlot(utc(15,2)),utc(15,12),'a refresh at the slot schedules the next one');
  assert.equal(nextRefreshSlot(utc(15,5,30)),utc(15,12));
  assert.equal(nextRefreshSlot(utc(15,58)),utc(16,2));
- console.log('Passed: refresh slots, Simepar HD field, Simepar parsing, forecast merge, matrix motion, cooling, outliers, missing scans, rolling IDs, translations and circular overlays.');
+ const far={...summary,trackId:2,distanceKm:394,status:'uncertain'};
+ assert.equal(headline([far],'en').title,'No convective storms','storms beyond the 300 km ring are ignored');
+ assert.equal(headline([far,{...far,trackId:5,distanceKm:120}],'en').tone,'watch','the first storm inside the ring drives the headline');
+ console.log('Passed: headline radius, refresh slots, Simepar HD field, Simepar parsing, forecast merge, matrix motion, cooling, outliers, missing scans, rolling IDs, translations and circular overlays.');
 } finally {await server.close();}

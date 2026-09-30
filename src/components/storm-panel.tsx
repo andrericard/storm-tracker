@@ -385,9 +385,7 @@ export function StormPanel({
 	nextRefreshAt,
 }: StormPanelProps) {
 	const { t, language } = useTranslation();
-	const status = data
-		? headline(data.tracks[0], data.radiusKm, language)
-		: null;
+	const status = data ? headline(data.tracks, language) : null;
 	const latestFrame = data?.frames.at(-1);
 	return (
 		<div className="pointer-events-auto flex max-h-[calc(100vh-2rem)] w-[400px] flex-col rounded-xl border bg-background/85 shadow-2xl backdrop-blur-md">

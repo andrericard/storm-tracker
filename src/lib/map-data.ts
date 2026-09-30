@@ -154,6 +154,7 @@ export function tracksToGeoJSON(
 }
 
 export const RANGE_RINGS_KM = [50, 100, 200, 300];
+export const ALERT_RADIUS_KM = 300;
 
 export function rangeRingsToGeoJSON(target: LatLon): FeatureCollection {
 	const features: Feature[] = [];
