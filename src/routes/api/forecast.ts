@@ -4,7 +4,7 @@ export const Route = createFileRoute("/api/forecast")({
 	server: {
 		handlers: {
 			GET: async ({ request }) => {
-				const { loadForecast } = await import("#/server/simepar/forecast");
+				const { loadForecast } = await import("#/server/forecast");
 				const params = new URL(request.url).searchParams;
 				const lat = Number(params.get("lat"));
 				const lon = Number(params.get("lon"));

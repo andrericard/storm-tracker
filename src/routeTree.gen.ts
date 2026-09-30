@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiForecastRouteImport } from './routes/api/forecast'
 import { Route as ApiFramesRouteImport } from './routes/api/frames'
+import { Route as ApiRadarRouteImport } from './routes/api/radar'
 import { Route as ApiSimeparRouteImport } from './routes/api/simepar'
 
 const IndexRoute = IndexRouteImport.update({
@@ -29,6 +30,11 @@ const ApiFramesRoute = ApiFramesRouteImport.update({
   path: '/api/frames',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiRadarRoute = ApiRadarRouteImport.update({
+  id: '/api/radar',
+  path: '/api/radar',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiSimeparRoute = ApiSimeparRouteImport.update({
   id: '/api/simepar',
   path: '/api/simepar',
@@ -39,12 +45,14 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/forecast': typeof ApiForecastRoute
   '/api/frames': typeof ApiFramesRoute
+  '/api/radar': typeof ApiRadarRoute
   '/api/simepar': typeof ApiSimeparRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/forecast': typeof ApiForecastRoute
   '/api/frames': typeof ApiFramesRoute
+  '/api/radar': typeof ApiRadarRoute
   '/api/simepar': typeof ApiSimeparRoute
 }
 export interface FileRoutesById {
@@ -52,20 +60,29 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/api/forecast': typeof ApiForecastRoute
   '/api/frames': typeof ApiFramesRoute
+  '/api/radar': typeof ApiRadarRoute
   '/api/simepar': typeof ApiSimeparRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/forecast' | '/api/frames' | '/api/simepar'
+  fullPaths:
+    '/' | '/api/forecast' | '/api/frames' | '/api/radar' | '/api/simepar'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/forecast' | '/api/frames' | '/api/simepar'
-  id: '__root__' | '/' | '/api/forecast' | '/api/frames' | '/api/simepar'
+  to: '/' | '/api/forecast' | '/api/frames' | '/api/radar' | '/api/simepar'
+  id:
+    | '__root__'
+    | '/'
+    | '/api/forecast'
+    | '/api/frames'
+    | '/api/radar'
+    | '/api/simepar'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ApiForecastRoute: typeof ApiForecastRoute
   ApiFramesRoute: typeof ApiFramesRoute
+  ApiRadarRoute: typeof ApiRadarRoute
   ApiSimeparRoute: typeof ApiSimeparRoute
 }
 
@@ -92,6 +109,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiFramesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/radar': {
+      id: '/api/radar'
+      path: '/api/radar'
+      fullPath: '/api/radar'
+      preLoaderRoute: typeof ApiRadarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/simepar': {
       id: '/api/simepar'
       path: '/api/simepar'
@@ -106,6 +130,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiForecastRoute: ApiForecastRoute,
   ApiFramesRoute: ApiFramesRoute,
+  ApiRadarRoute: ApiRadarRoute,
   ApiSimeparRoute: ApiSimeparRoute,
 }
 export const routeTree = rootRouteImport

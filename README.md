@@ -36,6 +36,14 @@ Files are cached in the OS temp folder (`storm-tracker-cache`) for 4 hours.
 
 The map can overlay 2D fields from GFS (sea level pressure with isobars, CAPE, 0–6 km shear, |SRH| 0–3 km) and the GOES rainfall rate.
 
+### Hourly forecast
+
+`/api/forecast` merges two hourly point forecasts for the selected location by local hour, for the next 36 hours. The ECMWF IFS 9 km forecast comes from Open-Meteo (CC-BY 4.0, rain probability from the ECMWF ensemble) and works anywhere. The Simepar county forecast is scraped from `forecast_by_counties/<IBGE code>` when the location is in Paraná, with the IBGE code taken from the OpenStreetMap reverse geocode. Either source may fail without hiding the other. The card shows only rain, amount and chance per source; rows where both give 70% or more are highlighted.
+
+### IPMet radar
+
+The radar layer is the IPMet/Unesp PPI mosaic (Bauru and Presidente Prudente radars), requested from their MapServer WMS as a transparent PNG already in Web Mercator (`EPSG:900913`) over the layer's own bounds (lon -55.876 to -44.516, lat -26.4 to -18.08). It is proxied through `/api/radar` because the server only answers requests with an IPMet referer. IPMet keeps only the last five scans (about 30 minutes, `last.map` to `last4.map` with their times in `lastPPI*.txt`); `/api/radar` lists their times and serves each one by time, and the timeline shows the scan closest to the selected frame (within 8 minutes, the live frame always shows the newest scan). The WMS and WCS only expose the coloured palette, not raw dBZ values.
+
 ### Simepar radar
 
 The Paraná state radar mosaic published by Simepar (`radar_msc`) is a plain JPEG with a baked-in basemap and no georeferencing. It was georeferenced once by detecting the 26 city markers in the image and fitting them to known coordinates: the image is an axis-aligned lat/lon box (lon −57.1419 to −45.8144, lat −28.5076 to −21.0058) with a 0.85 px RMS residual (about 1 km). At runtime the image is proxied through `/api/simepar`, the radar colours are keyed out from the basemap, labels are filled in from neighbouring echoes, rows are resampled to Web Mercator and the result is placed on the map with those bounds. The faintest (dark green) echoes are indistinguishable from vegetation in the basemap and are dropped.

@@ -23,6 +23,7 @@ import {
 	tracksToGeoJSON,
 } from "#/lib/map-data";
 import { OVERLAYS, type OverlayChoice } from "#/lib/overlays";
+import { RADAR_CORNERS } from "#/lib/radar";
 import { rainImage } from "#/lib/rain-image";
 import { loadSimeparImage } from "#/lib/simepar-image";
 import type { Frame, FramesResponse, LatLon } from "#/lib/storm-types";
@@ -42,6 +43,7 @@ export interface MapSettings {
 	tracks: boolean;
 	rain: boolean;
 	radar: boolean;
+	simepar: boolean;
 	overlay: OverlayChoice;
 	exaggeration: number;
 }
@@ -64,6 +66,7 @@ interface StormMapProps {
 
 const LOW_CLOUD_LIMIT_K = 250;
 const RADAR_REFRESH_MS = 5 * 60 * 1000;
+const RADAR_MAX_GAP_MS = 8 * 60 * 1000;
 const CLOUD_BASE_M = 1500;
 const CLOUD_DEPTH_STOPS: [number, number][] = [
 	[200, 16000],
@@ -111,7 +114,7 @@ function addLayers(map: MapLibreMap) {
 	]) {
 		map.addSource(id, { type: "geojson", data: EMPTY_COLLECTION });
 	}
-	for (const id of ["infrared", "environment", "rain", "radar"]) {
+	for (const id of ["infrared", "environment", "rain", "radar", "simepar"]) {
 		map.addSource(id, {
 			type: "image",
 			url: TRANSPARENT_PIXEL,
@@ -165,6 +168,19 @@ function addLayers(map: MapLibreMap) {
 			paint: {
 				"raster-opacity": 0.9,
 				"raster-resampling": "nearest",
+				"raster-fade-duration": 0,
+			},
+		},
+		labelsId,
+	);
+	map.addLayer(
+		{
+			id: "simepar-2d",
+			type: "raster",
+			source: "simepar",
+			paint: {
+				"raster-opacity": 0.85,
+				"raster-resampling": "linear",
 				"raster-fade-duration": 0,
 			},
 		},
@@ -408,6 +424,7 @@ export function StormMap({
 	const [drawing, setDrawing] = useState(false);
 	const drawingRef = useRef(false);
 	const [ruler, setRuler] = useState<[number, number][]>([]);
+	const [radarTimes, setRadarTimes] = useState<string[]>([]);
 	const rulerMarkersRef = useRef<Marker[]>([]);
 	drawingRef.current = drawing && !picking;
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -435,7 +452,7 @@ export function StormMap({
 			maxPitch: 80,
 			canvasContextAttributes: { antialias: true },
 			attributionControl: {
-				customAttribution: "Satellite © NOAA · Radar © Simepar",
+				customAttribution: "Satellite © NOAA · Radar © IPMet/Unesp, Simepar · Forecast © ECMWF via Open-Meteo",
 			},
 		});
 		map.addControl(
@@ -608,8 +625,8 @@ export function StormMap({
 	useEffect(() => {
 		const map = mapRef.current;
 		if (!map || !loaded) return;
-		const source = map.getSource("radar") as ImageSource | undefined;
-		if (!settings.radar) {
+		const source = map.getSource("simepar") as ImageSource | undefined;
+		if (!settings.simepar) {
 			source?.updateImage({
 				url: TRANSPARENT_PIXEL,
 				coordinates: PLACEHOLDER_CORNERS,
@@ -633,7 +650,57 @@ export function StormMap({
 			controller.abort();
 			window.clearInterval(timer);
 		};
-	}, [loaded, settings.radar]);
+	}, [loaded, settings.simepar]);
+
+	useEffect(() => {
+		if (!settings.radar) {
+			setRadarTimes([]);
+			return;
+		}
+		const controller = new AbortController();
+		const refresh = () =>
+			fetch("/api/radar", { signal: controller.signal })
+				.then((response) => (response.ok ? response.json() : []))
+				.then(setRadarTimes)
+				.catch((error) => {
+					if (!controller.signal.aborted) console.error(error);
+				});
+		refresh();
+		const timer = window.setInterval(refresh, RADAR_REFRESH_MS);
+		return () => {
+			controller.abort();
+			window.clearInterval(timer);
+		};
+	}, [settings.radar]);
+
+	const radarTime = useMemo(() => {
+		if (!frame || frame === data?.frames.at(-1)) return radarTimes[0] ?? null;
+		const frameMs = Date.parse(frame.time);
+		let best: string | null = null;
+		let bestGap = RADAR_MAX_GAP_MS;
+		for (const time of radarTimes) {
+			const gap = Math.abs(Date.parse(time) - frameMs);
+			if (gap <= bestGap) {
+				best = time;
+				bestGap = gap;
+			}
+		}
+		return best;
+	}, [radarTimes, frame, data]);
+
+	useEffect(() => {
+		const map = mapRef.current;
+		if (!map || !loaded) return;
+		const source = map.getSource("radar") as ImageSource | undefined;
+		source?.updateImage(
+			radarTime
+				? {
+						url: `/api/radar?time=${encodeURIComponent(radarTime)}`,
+						coordinates: RADAR_CORNERS,
+					}
+				: { url: TRANSPARENT_PIXEL, coordinates: PLACEHOLDER_CORNERS },
+		);
+	}, [loaded, radarTime]);
 
 	useEffect(() => {
 		const map = mapRef.current;
@@ -676,6 +743,11 @@ export function StormMap({
 			visibility(settings.overlay !== "none"),
 		);
 		map.setLayoutProperty("radar-2d", "visibility", visibility(settings.radar));
+		map.setLayoutProperty(
+			"simepar-2d",
+			"visibility",
+			visibility(settings.simepar),
+		);
 		for (const id of ["isobar-lines", "isobar-labels"]) {
 			map.setLayoutProperty(
 				id,

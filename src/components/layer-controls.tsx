@@ -1,7 +1,6 @@
 import type { MapSettings, ViewMode } from "#/components/storm-map";
 import { Button } from "#/components/ui/button";
 import { Label } from "#/components/ui/label";
-import { Separator } from "#/components/ui/separator";
 import { Slider } from "#/components/ui/slider";
 import { Switch } from "#/components/ui/switch";
 import { OVERLAY_DESCRIPTIONS } from "#/lib/glossary";
@@ -27,13 +26,21 @@ const VIEW_MODES: { value: ViewMode; label: string }[] = [
 ];
 
 const TOGGLES: {
-	key: "clouds" | "lowClouds" | "rain" | "radar" | "lightning" | "tracks";
+	key:
+		| "clouds"
+		| "lowClouds"
+		| "rain"
+		| "radar"
+		| "simepar"
+		| "lightning"
+		| "tracks";
 	label: string;
 }[] = [
 	{ key: "clouds", label: "Cloud layer" },
 	{ key: "lowClouds", label: "Show warm / low clouds" },
 	{ key: "rain", label: "Rain rate (GOES)" },
-	{ key: "radar", label: "Radar (Simepar)" },
+	{ key: "radar", label: "Radar (IPMet)" },
+	{ key: "simepar", label: "Radar (Simepar)" },
 	{ key: "lightning", label: "Lightning (GLM)" },
 	{ key: "tracks", label: "Tracks & forecast" },
 ];
@@ -69,9 +76,9 @@ function Legend({
 }) {
 	return (
 		<div>
-			<div className="mb-1.5 text-xs text-muted-foreground">{title}</div>
-			<div className="h-2.5 rounded-full" style={{ background: gradient }} />
-			<div className="relative mt-1 h-3 text-[10px] text-muted-foreground tabular-nums">
+			<div className="mb-1 text-xs">{title}</div>
+			<div className="h-2 rounded-full" style={{ background: gradient }} />
+			<div className="relative mt-0.5 h-3 text-[10px] tabular-nums">
 				{ticks.map((value) => (
 					<span
 						key={value}
@@ -97,10 +104,8 @@ export function LayerControls({
 	onChange,
 }: LayerControlsProps) {
 	const { t, language, setLanguage } = useTranslation();
-	const overlay =
-		settings.overlay === "none" ? null : OVERLAYS[settings.overlay];
 	return (
-		<div className="pointer-events-auto flex min-h-0 w-64 overflow-y-auto flex-col gap-3 rounded-xl border bg-background/85 p-4 shadow-2xl backdrop-blur-md">
+		<div className="pointer-events-auto flex max-h-full w-64 shrink-0 overflow-y-auto flex-col gap-3 rounded-xl border bg-background/85 p-4 shadow-2xl backdrop-blur-md">
 			<label className="flex items-center justify-between text-sm">
 				{t("Language")}
 				<select
@@ -202,7 +207,16 @@ export function LayerControls({
 					}
 				/>
 			</div>
-			<Separator />
+		</div>
+	);
+}
+
+export function MapLegends({ settings }: { settings: MapSettings }) {
+	const { t } = useTranslation();
+	const overlay =
+		settings.overlay === "none" ? null : OVERLAYS[settings.overlay];
+	return (
+		<div className="flex w-56 flex-col gap-1 [text-shadow:0_1px_2px_rgb(0_0_0/0.9)]">
 			<Legend
 				title={t("Cloud top temperature")}
 				gradient={IR_GRADIENT}
@@ -212,6 +226,16 @@ export function LayerControls({
 				format={(k) => `${kelvinToCelsius(k)}°`}
 			/>
 			{settings.radar && (
+				<Legend
+					title={t("Radar intensity (IPMet)")}
+					gradient="linear-gradient(90deg, #00ffff 0%, #008045 25%, #48ff46 45%, #ffff00 60%, #ff4900 80%, #960000 100%)"
+					min={0}
+					max={100}
+					ticks={[10, 50, 90]}
+					format={(v) => t(v < 30 ? "weak" : v < 70 ? "moderate" : "strong")}
+				/>
+			)}
+			{settings.simepar && (
 				<Legend
 					title={t("Radar intensity (Simepar)")}
 					gradient="linear-gradient(90deg, #15803d 0%, #22c55e 25%, #facc15 50%, #dc2626 75%, #d946ef 100%)"

@@ -1,8 +1,8 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { LayerControls } from "#/components/layer-controls";
-import { SimeparForecastCard } from "#/components/simepar-forecast";
+import { ForecastCard } from "#/components/forecast-card";
+import { LayerControls, MapLegends } from "#/components/layer-controls";
 import {
 	type FlyToRequest,
 	type MapSettings,
@@ -16,11 +16,7 @@ import {
 	loadSettings,
 	saveSettings,
 } from "#/lib/settings-storage";
-import type {
-	FramesResponse,
-	LatLon,
-	SimeparForecast,
-} from "#/lib/storm-types";
+import type { FramesResponse, LatLon, PointForecast } from "#/lib/storm-types";
 
 const DEFAULT_TARGET = { lat: -23.7661, lon: -53.3206, name: "Umuarama, PR" };
 const FRAME_COUNT = 12;
@@ -58,7 +54,7 @@ async function fetchFrames(target: LatLon): Promise<FramesResponse> {
 	return body;
 }
 
-async function fetchForecast(target: LatLon): Promise<SimeparForecast | null> {
+async function fetchForecast(target: LatLon): Promise<PointForecast> {
 	const params = new URLSearchParams({
 		lat: target.lat.toFixed(4),
 		lon: target.lon.toFixed(4),
@@ -202,7 +198,10 @@ function StormTrackerPage() {
 						model={data?.environment?.model ?? null}
 						onChange={setSettings}
 					/>
-					{forecast && <SimeparForecastCard forecast={forecast} />}
+					{forecast && <ForecastCard forecast={forecast} />}
+				</div>
+				<div className="pointer-events-none absolute top-4 right-[288px]">
+					<MapLegends settings={settings} />
 				</div>
 				{data && (
 					<div className="pointer-events-none absolute bottom-6 left-1/2 -translate-x-1/2">

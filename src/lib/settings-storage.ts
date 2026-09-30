@@ -11,6 +11,7 @@ export const DEFAULT_SETTINGS: MapSettings = {
 	tracks: true,
 	rain: false,
 	radar: false,
+	simepar: false,
 	overlay: "none",
 	exaggeration: 5,
 };
@@ -52,6 +53,7 @@ export function loadSettings(): MapSettings {
 			tracks: bool(parsed.tracks, DEFAULT_SETTINGS.tracks),
 			rain: bool(parsed.rain, DEFAULT_SETTINGS.rain),
 			radar: bool(parsed.radar, DEFAULT_SETTINGS.radar),
+			simepar: bool(parsed.simepar, DEFAULT_SETTINGS.simepar),
 			overlay: OVERLAYS.has(parsed.overlay as string)
 				? (parsed.overlay as MapSettings["overlay"])
 				: DEFAULT_SETTINGS.overlay,

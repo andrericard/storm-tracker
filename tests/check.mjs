@@ -8,7 +8,7 @@ try {
  const {GLOSSARY,OVERLAY_DESCRIPTIONS}=await server.ssrLoadModule('/src/lib/glossary.ts');
  const {fieldImage,contourLines}=await server.ssrLoadModule('/src/lib/field-image.ts');
  const {distanceKm}=await server.ssrLoadModule('/src/lib/geo.ts');
- const {parseForecast}=await server.ssrLoadModule('/src/server/simepar/forecast.ts');
+ const {parseSimepar,mergeForecasts}=await server.ssrLoadModule('/src/server/forecast.ts');
  const grid={west:-54,south:-25,step:0.05,cols:60,rows:60};
  function frame(shift,time,cooling=0) {
   const brightnessTemp=new Float32Array(3600);
@@ -63,10 +63,14 @@ try {
  const contours=contourLines(g,values,2,{lat:0,lon:0},80);
  assert(contours.features.length>0);
  for(const f of contours.features) for(const [lon,lat] of f.geometry.coordinates) assert(distanceKm({lat:0,lon:0},{lat,lon})<=80);
- const html='<h2><a href="x">\n Umuarama/PR <i></i></a></h2><div class = "table-hourly tab-pane"><span class="did-data">Qua, 30 de Set</span><div class="ah-header"><div class="ah-time">10:00</div><div class="ah-temp"><i class="wi" title=" Pancadas de chuva "></i>  25˚C </div><div class="ah-prec">0.2 mm</div><div class="ah-wind">N 11 km/h </div></div><span class="var">Probabilidade de Ocorrência de Chuva:</span> <span class="val">\n 40%</span><div class="ah-header"><div class="ah-time">11:00</div><div class="ah-temp"><i class="wi" title="Sol"></i> 27˚C </div><div class="ah-wind">NE 5 km/h</div></div></div>';
- const forecast=parseForecast(html,'u');
- assert.equal(forecast.city,'Umuarama/PR');
- assert.deepEqual(forecast.hours[0],{day:'Qua, 30 de Set',time:'10:00',condition:'Pancadas de chuva',tempC:25,rainMm:0.2,rainChance:40,wind:'N 11 km/h'});
- assert.equal(forecast.hours[1].rainMm,0,'missing precipitation means dry');
- console.log('Passed: Simepar forecast parsing, matrix motion, cooling, outliers, missing scans, rolling IDs, translations and circular overlays.');
+ const html='<h2><a href="x">\n Umuarama/PR <i></i></a></h2><div class = "table-hourly tab-pane"><span class="did-data">Qua, 30 de Set de 2026</span><div class="ah-header"><div class="ah-time">10:00</div><div class="ah-temp"><i class="wi" title=" Pancadas de chuva "></i>  25˚C </div><div class="ah-prec">0.2 mm</div><div class="ah-wind">N 11 km/h </div></div><span class="var">Probabilidade de Ocorrência de Chuva:</span> <span class="val">\n 40%</span><div class="ah-header"><div class="ah-time">11:00</div><div class="ah-temp"><i class="wi" title="Sol"></i> 27˚C </div><div class="ah-wind">NE 5 km/h</div></div></div>';
+ const simepar=parseSimepar(html);
+ assert.equal(simepar.city,'Umuarama/PR');
+ assert.deepEqual(simepar.hours[0],{time:'2026-09-30T10:00',condition:'Pancadas de chuva',rainMm:0.2,rainChance:40});
+ assert.equal(simepar.hours[1].rainMm,0,'missing precipitation means dry');
+ const merged=mergeForecasts(simepar.hours,[{time:'2026-09-30T09:00',rainMm:0,rainChance:5},{time:'2026-09-30T10:00',rainMm:1.5,rainChance:80},{time:'2026-09-30T12:00',rainMm:0,rainChance:10}],'2026-09-30T10:00','2026-09-30T12:00');
+ assert.deepEqual(merged.map(h=>h.time),['2026-09-30T10:00','2026-09-30T11:00','2026-09-30T12:00'],'merge both sources by local hour inside the window');
+ assert.deepEqual(merged[0].ecmwf,{rainMm:1.5,rainChance:80});assert.equal(merged[0].simepar.rainChance,40);
+ assert.equal(merged[1].ecmwf,null);assert.equal(merged[2].simepar,null);
+ console.log('Passed: Simepar parsing, forecast merge, matrix motion, cooling, outliers, missing scans, rolling IDs, translations and circular overlays.');
 } finally {await server.close();}

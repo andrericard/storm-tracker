@@ -135,16 +135,20 @@ export interface FramesResponse {
 	generatedAt: string;
 }
 
-export interface SimeparForecast {
+export interface RainForecast {
+	rainMm: number;
+	rainChance: number;
+}
+
+export interface ForecastHour {
+	time: string;
+	condition: string | null;
+	simepar: RainForecast | null;
+	ecmwf: RainForecast | null;
+}
+
+export interface PointForecast {
 	city: string;
-	url: string;
-	hours: {
-		day: string;
-		time: string;
-		condition: string;
-		tempC: number;
-		rainMm: number;
-		rainChance: number;
-		wind: string;
-	}[];
+	simeparUrl: string | null;
+	hours: ForecastHour[];
 }
