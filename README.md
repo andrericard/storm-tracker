@@ -36,6 +36,10 @@ Files are cached in the OS temp folder (`storm-tracker-cache`) for 4 hours.
 
 The map can overlay 2D fields from GFS (sea level pressure with isobars, CAPE, 0–6 km shear, |SRH| 0–3 km) and the GOES rainfall rate.
 
+### Simepar radar
+
+The Paraná state radar mosaic published by Simepar (`radar_msc`) is a plain JPEG with a baked-in basemap and no georeferencing. It was georeferenced once by detecting the 26 city markers in the image and fitting them to known coordinates: the image is an axis-aligned lat/lon box (lon −57.1419 to −45.8144, lat −28.5076 to −21.0058) with a 0.85 px RMS residual (about 1 km). At runtime the image is proxied through `/api/simepar`, the radar colours are keyed out from the basemap, labels are filled in from neighbouring echoes, rows are resampled to Web Mercator and the result is placed on the map with those bounds. The faintest (dark green) echoes are indistinguishable from vegetation in the basemap and are dropped.
+
 ## Running
 
 Requires Node 24 (`nvm use 24`).

@@ -21,6 +21,7 @@ import {
 } from "#/lib/map-data";
 import { OVERLAYS, type OverlayChoice } from "#/lib/overlays";
 import { rainImage } from "#/lib/rain-image";
+import { loadSimeparImage } from "#/lib/simepar-image";
 import type { Frame, FramesResponse, LatLon } from "#/lib/storm-types";
 
 const BASEMAP_STYLE =
@@ -37,6 +38,7 @@ export interface MapSettings {
 	lightning: boolean;
 	tracks: boolean;
 	rain: boolean;
+	radar: boolean;
 	overlay: OverlayChoice;
 	exaggeration: number;
 }
@@ -58,6 +60,7 @@ interface StormMapProps {
 }
 
 const LOW_CLOUD_LIMIT_K = 250;
+const RADAR_REFRESH_MS = 5 * 60 * 1000;
 const CLOUD_BASE_M = 1500;
 const CLOUD_DEPTH_STOPS: [number, number][] = [
 	[200, 16000],
@@ -104,7 +107,7 @@ function addLayers(map: MapLibreMap) {
 	]) {
 		map.addSource(id, { type: "geojson", data: EMPTY_COLLECTION });
 	}
-	for (const id of ["infrared", "environment", "rain"]) {
+	for (const id of ["infrared", "environment", "rain", "radar"]) {
 		map.addSource(id, {
 			type: "image",
 			url: TRANSPARENT_PIXEL,
@@ -158,6 +161,19 @@ function addLayers(map: MapLibreMap) {
 			paint: {
 				"raster-opacity": 0.9,
 				"raster-resampling": "nearest",
+				"raster-fade-duration": 0,
+			},
+		},
+		labelsId,
+	);
+	map.addLayer(
+		{
+			id: "radar-2d",
+			type: "raster",
+			source: "radar",
+			paint: {
+				"raster-opacity": 0.85,
+				"raster-resampling": "linear",
 				"raster-fade-duration": 0,
 			},
 		},
@@ -377,6 +393,9 @@ export function StormMap({
 			bearing: viewRef.current === "2d" ? 0 : -12,
 			maxPitch: 80,
 			canvasContextAttributes: { antialias: true },
+			attributionControl: {
+				customAttribution: "Satellite © NOAA · Radar © Simepar",
+			},
 		});
 		map.addControl(
 			new maplibregl.NavigationControl({ visualizePitch: true }),
@@ -525,6 +544,36 @@ export function StormMap({
 
 	useEffect(() => {
 		const map = mapRef.current;
+		if (!map || !loaded) return;
+		const source = map.getSource("radar") as ImageSource | undefined;
+		if (!settings.radar) {
+			source?.updateImage({
+				url: TRANSPARENT_PIXEL,
+				coordinates: PLACEHOLDER_CORNERS,
+			});
+			return;
+		}
+		const controller = new AbortController();
+		const refresh = () => {
+			loadSimeparImage(controller.signal)
+				.then((image) => {
+					if (controller.signal.aborted) return;
+					source?.updateImage({ url: image.url, coordinates: image.corners });
+				})
+				.catch((error) => {
+					if (!controller.signal.aborted) console.error(error);
+				});
+		};
+		refresh();
+		const timer = window.setInterval(refresh, RADAR_REFRESH_MS);
+		return () => {
+			controller.abort();
+			window.clearInterval(timer);
+		};
+	}, [loaded, settings.radar]);
+
+	useEffect(() => {
+		const map = mapRef.current;
 		if (!map || !loaded || viewRef.current === settings.view) return;
 		viewRef.current = settings.view;
 		if (settings.view === "2d") {
@@ -563,6 +612,7 @@ export function StormMap({
 			"visibility",
 			visibility(settings.overlay !== "none"),
 		);
+		map.setLayoutProperty("radar-2d", "visibility", visibility(settings.radar));
 		for (const id of ["isobar-lines", "isobar-labels"]) {
 			map.setLayoutProperty(
 				id,

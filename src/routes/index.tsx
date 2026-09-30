@@ -85,6 +85,7 @@ function StormTrackerPage() {
 		lightning: true,
 		tracks: true,
 		rain: false,
+		radar: false,
 		overlay: "none",
 		exaggeration: 5,
 	});

@@ -26,12 +26,13 @@ const VIEW_MODES: { value: ViewMode; label: string }[] = [
 ];
 
 const TOGGLES: {
-	key: "clouds" | "lowClouds" | "rain" | "lightning" | "tracks";
+	key: "clouds" | "lowClouds" | "rain" | "radar" | "lightning" | "tracks";
 	label: string;
 }[] = [
 	{ key: "clouds", label: "Cloud layer" },
 	{ key: "lowClouds", label: "Show warm / low clouds" },
 	{ key: "rain", label: "Rain rate (GOES)" },
+	{ key: "radar", label: "Radar (Simepar)" },
 	{ key: "lightning", label: "Lightning (GLM)" },
 	{ key: "tracks", label: "Tracks & forecast" },
 ];
@@ -194,6 +195,16 @@ export function LayerControls({
 				ticks={[190, 210, 235, 270]}
 				format={(k) => `${kelvinToCelsius(k)}°`}
 			/>
+			{settings.radar && (
+				<Legend
+					title="Radar intensity (Simepar)"
+					gradient="linear-gradient(90deg, #15803d 0%, #22c55e 25%, #facc15 50%, #dc2626 75%, #d946ef 100%)"
+					min={0}
+					max={100}
+					ticks={[10, 50, 90]}
+					format={(v) => (v < 30 ? "weak" : v < 70 ? "moderate" : "strong")}
+				/>
+			)}
 			{settings.rain && (
 				<Legend
 					title="Rain rate (mm/h)"

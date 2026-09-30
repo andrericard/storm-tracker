@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiFramesRouteImport } from './routes/api/frames'
+import { Route as ApiSimeparRouteImport } from './routes/api/simepar'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,31 +23,40 @@ const ApiFramesRoute = ApiFramesRouteImport.update({
   path: '/api/frames',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSimeparRoute = ApiSimeparRouteImport.update({
+  id: '/api/simepar',
+  path: '/api/simepar',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/frames': typeof ApiFramesRoute
+  '/api/simepar': typeof ApiSimeparRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/frames': typeof ApiFramesRoute
+  '/api/simepar': typeof ApiSimeparRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/api/frames': typeof ApiFramesRoute
+  '/api/simepar': typeof ApiSimeparRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/frames'
+  fullPaths: '/' | '/api/frames' | '/api/simepar'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/frames'
-  id: '__root__' | '/' | '/api/frames'
+  to: '/' | '/api/frames' | '/api/simepar'
+  id: '__root__' | '/' | '/api/frames' | '/api/simepar'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ApiFramesRoute: typeof ApiFramesRoute
+  ApiSimeparRoute: typeof ApiSimeparRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -65,12 +75,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiFramesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/simepar': {
+      id: '/api/simepar'
+      path: '/api/simepar'
+      fullPath: '/api/simepar'
+      preLoaderRoute: typeof ApiSimeparRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiFramesRoute: ApiFramesRoute,
+  ApiSimeparRoute: ApiSimeparRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
