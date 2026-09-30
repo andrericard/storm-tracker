@@ -54,12 +54,8 @@ async function fetchFrames(target: LatLon): Promise<FramesResponse> {
 	return body;
 }
 
-async function fetchForecast(target: LatLon): Promise<PointForecast> {
-	const params = new URLSearchParams({
-		lat: target.lat.toFixed(4),
-		lon: target.lon.toFixed(4),
-	});
-	const response = await fetch(`/api/forecast?${params}`);
+async function fetchForecast(): Promise<PointForecast> {
+	const response = await fetch("/api/forecast");
 	const body = await response.json();
 	if (!response.ok) throw new Error(body.error ?? "Failed to load forecast");
 	return body;
@@ -86,8 +82,8 @@ function StormTrackerPage() {
 	});
 	const data = query.data;
 	const forecastQuery = useQuery({
-		queryKey: ["forecast", target.lat, target.lon],
-		queryFn: () => fetchForecast(target),
+		queryKey: ["forecast"],
+		queryFn: fetchForecast,
 		staleTime: REFRESH_INTERVAL_MS - 30_000,
 		retry: 1,
 	});

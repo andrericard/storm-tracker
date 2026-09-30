@@ -3,19 +3,10 @@ import { createFileRoute } from "@tanstack/react-router";
 export const Route = createFileRoute("/api/forecast")({
 	server: {
 		handlers: {
-			GET: async ({ request }) => {
+			GET: async () => {
 				const { loadForecast } = await import("#/server/forecast");
-				const params = new URL(request.url).searchParams;
-				const lat = Number(params.get("lat"));
-				const lon = Number(params.get("lon"));
-				if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-					return Response.json(
-						{ error: "lat and lon are required" },
-						{ status: 400 },
-					);
-				}
 				try {
-					return Response.json(await loadForecast(lat, lon), {
+					return Response.json(await loadForecast(), {
 						headers: { "Cache-Control": "public, max-age=300" },
 					});
 				} catch (error) {

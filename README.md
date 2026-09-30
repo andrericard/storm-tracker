@@ -38,7 +38,7 @@ The map can overlay 2D fields from GFS (sea level pressure with isobars, CAPE, 0
 
 ### Hourly forecast
 
-`/api/forecast` merges two hourly point forecasts for the selected location by local hour, for the next 36 hours. The ECMWF IFS 9 km forecast comes from Open-Meteo (CC-BY 4.0, rain probability from the ECMWF ensemble) and works anywhere. The Simepar county forecast is scraped from `forecast_by_counties/<IBGE code>` when the location is in Paraná, with the IBGE code taken from the OpenStreetMap reverse geocode. Either source may fail without hiding the other. The card shows only rain, amount and chance per source; rows where both give 70% or more are highlighted.
+`/api/forecast` merges two hourly point forecasts for Umuarama (fixed, it does not follow the selected target) by local hour, for the next 36 hours: the ECMWF IFS 9 km forecast from Open-Meteo (CC-BY 4.0, rain probability from the ECMWF ensemble) and the Simepar county forecast scraped from `forecast_by_counties/4128104`. Either source may fail without hiding the other. The card shows only rain, amount and chance per source; rows where both give 70% or more are highlighted.
 
 ### IPMet radar
 

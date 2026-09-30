@@ -2,6 +2,12 @@ import type { ForecastHour, PointForecast } from "#/lib/storm-types";
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const HOURS_AHEAD = 36;
+const UMUARAMA = {
+	name: "Umuarama/PR",
+	lat: -23.7661,
+	lon: -53.3206,
+	ibgeCode: "4128104",
+};
 const USER_AGENT = "storm-tracker (personal weather dashboard)";
 const MONTHS = [
 	"jan",
@@ -18,11 +24,6 @@ const MONTHS = [
 	"dez",
 ];
 
-interface Place {
-	name: string;
-	paranaCode: string | null;
-}
-
 interface SimeparHour {
 	time: string;
 	condition: string;
@@ -36,7 +37,6 @@ interface EcmwfHour {
 	rainChance: number;
 }
 
-const placeCache = new Map<string, Place>();
 const cache = new Map<string, { at: number; value: unknown }>();
 
 async function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
@@ -45,34 +45,6 @@ async function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
 	const value = await load();
 	cache.set(key, { at: Date.now(), value });
 	return value;
-}
-
-async function reversePlace(lat: number, lon: number): Promise<Place> {
-	const key = `${lat.toFixed(3)},${lon.toFixed(3)}`;
-	const hit = placeCache.get(key);
-	if (hit) return hit;
-	const params = new URLSearchParams({
-		lat: String(lat),
-		lon: String(lon),
-		zoom: "10",
-		format: "jsonv2",
-		extratags: "1",
-	});
-	const response = await fetch(
-		`https://nominatim.openstreetmap.org/reverse?${params}`,
-		{ headers: { "User-Agent": USER_AGENT } },
-	);
-	if (!response.ok) throw new Error(`Nominatim responded ${response.status}`);
-	const found = await response.json();
-	const place = {
-		name: found.name || `${lat.toFixed(3)}, ${lon.toFixed(3)}`,
-		paranaCode:
-			found.address?.["ISO3166-2-lvl4"] === "BR-PR"
-				? (found.extratags?.["IBGE:GEOCODIGO"] ?? null)
-				: null,
-	};
-	placeCache.set(key, place);
-	return place;
 }
 
 function text(html: string, pattern: RegExp) {
@@ -188,7 +160,7 @@ export function mergeForecasts(
 	return [...rows.values()].sort((a, b) => a.time.localeCompare(b.time));
 }
 
-async function settle<T>(promise: Promise<T> | null) {
+async function settle<T>(promise: Promise<T>) {
 	try {
 		return await promise;
 	} catch (error) {
@@ -197,20 +169,15 @@ async function settle<T>(promise: Promise<T> | null) {
 	}
 }
 
-export async function loadForecast(
-	lat: number,
-	lon: number,
-): Promise<PointForecast> {
-	const place = await settle(reversePlace(lat, lon));
+export async function loadForecast(): Promise<PointForecast> {
 	const [simepar, ecmwf] = await Promise.all([
-		settle(place?.paranaCode ? loadSimepar(place.paranaCode) : null),
-		settle(loadEcmwf(lat, lon)),
+		settle(loadSimepar(UMUARAMA.ibgeCode)),
+		settle(loadEcmwf(UMUARAMA.lat, UMUARAMA.lon)),
 	]);
 	if (!simepar && !ecmwf) throw new Error("No forecast source responded");
 	const offset = ecmwf?.utcOffsetSeconds ?? -3 * 3600;
 	return {
-		city:
-			simepar?.city ?? place?.name ?? `${lat.toFixed(3)}, ${lon.toFixed(3)}`,
+		city: UMUARAMA.name,
 		simeparUrl: simepar?.url ?? null,
 		hours: mergeForecasts(
 			simepar?.hours ?? [],
