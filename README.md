@@ -47,6 +47,10 @@ npm run dev
 
 Open http://localhost:3000. The first request downloads ~150 MB from NOAA and can take up to a minute; later refreshes reuse the cache.
 
+## Deploying
+
+The app needs a Node runtime for the `/api/frames` route, so it cannot run on static hosts such as GitHub Pages. It is set up for Vercel through the Nitro Vite plugin: import the repository at https://vercel.com/new and deploy with the defaults (`npm run build`, Node 24). The first request after a cold start downloads ~150 MB from NOAA and can take up to a minute; later requests reuse the cache in `/tmp`.
+
 ## API
 
 `GET /api/frames?lat=-23.7661&lon=-53.3206&frames=6&radius=400`
